@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 
 const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api';
 
@@ -540,6 +541,7 @@ function App() {
       <div className="site-credit">
         Created by <span>Ahaan Hossain</span>
       </div>
+      <Analytics />
     </div>
   );
 }
