@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Environment variables — never commit these
+.env
+server/.env
+.env.local
+.env.production.local
+
+# Vercel
+.vercel/
+
+# Build output
+client/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
