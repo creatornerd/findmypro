@@ -229,7 +229,7 @@ function HowItWorks() {
   );
 }
 
-function Welcome({ onPick }) {
+function Welcome({ onPick, onFocusInput }) {
   const groups = ['Legal', 'Medical', 'Financial'].map(k => ({
     kind: k,
     items: SUGGESTIONS.filter(s => s.kind === k),
@@ -244,6 +244,10 @@ function Welcome({ onPick }) {
         the type of specialist you need — then surfaces the highest-rated,
         verified practitioners near you. No directories. No forms.
       </p>
+
+      <button className="cta-btn" onClick={onFocusInput}>
+        Describe your situation →
+      </button>
 
       <HowItWorks />
 
@@ -482,7 +486,7 @@ function App() {
 
       <main ref={mainRef}>
         {empty ? (
-          <Welcome onPick={send} />
+          <Welcome onPick={send} onFocusInput={() => { taRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); taRef.current?.focus(); }} />
         ) : (
           <>
             {restored && (
