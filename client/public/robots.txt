@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://findmyspecialist.vercel.app/sitemap.xml

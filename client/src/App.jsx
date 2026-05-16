@@ -414,7 +414,7 @@ function App() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <span className="tagline">Lawyers · Doctors · Advisors</span>
           {!empty && (
-            <button className="ghost-btn" onClick={reset}>
+            <button className="ghost-btn" onClick={reset} aria-label="Start a new search">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: 4 }}>
                 <polyline points="1 4 1 10 7 10"/>
                 <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
@@ -523,9 +523,10 @@ function App() {
             onChange={e => { setInput(e.target.value); adjustTA(); }}
             onKeyDown={onKey}
             placeholder={placeholderText}
+            aria-label="Describe your situation"
             rows={1}
           />
-          <button className="send" onClick={() => send()} disabled={!input.trim() || loading}>
+          <button className="send" onClick={() => send()} disabled={!input.trim() || loading} aria-label="Send message">
             <SendIcon />
           </button>
         </div>

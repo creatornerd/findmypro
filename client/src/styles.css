@@ -15,7 +15,7 @@ html, body, #root { height: 100%; margin: 0; padding: 0; }
   --ink:      oklch(22% 0.012 80);
   --ink-2:    oklch(38% 0.012 80);
   --ink-3:    oklch(55% 0.012 80);
-  --ink-4:    oklch(72% 0.010 80);
+  --ink-4:    oklch(52% 0.010 80);
   --rule:     oklch(89% 0.012 80);
 
   --accent:        oklch(62% 0.135 55);
