@@ -85,6 +85,18 @@ function ShareIcon() {
 
 /* ─── Sub-components ───────────────────────────────── */
 
+function getVerifyLink(label) {
+  if (!label) return null;
+  const l = label.toLowerCase();
+  if (l.includes('lawyer') || l.includes('attorney') || l.includes('law')) {
+    return { url: 'https://www.americanbar.org/groups/legal_services/flh-home/', text: 'Verify with State Bar →' };
+  }
+  if (l.includes('advisor') || l.includes('financial') || l.includes('cpa') || l.includes('broker') || l.includes('planner') || l.includes('wealth')) {
+    return { url: 'https://brokercheck.finra.org', text: 'Verify on FINRA BrokerCheck →' };
+  }
+  return { url: 'https://www.fsmb.org/physician-data-center/', text: 'Verify Medical License →' };
+}
+
 function Stars({ rating }) {
   const full = Math.round(rating);
   return (
@@ -116,7 +128,8 @@ function Progress({ stage }) {
   );
 }
 
-function ResultCard({ r, n }) {
+function ResultCard({ r, n, label }) {
+  const verifyLink = getVerifyLink(label);
   return (
     <article className="card">
       <div className="num">{String(n).padStart(2, '0')}</div>
@@ -146,6 +159,11 @@ function ResultCard({ r, n }) {
               <a href={r.website} target="_blank" rel="noopener noreferrer">Visit website →</a>
             </span>
           )}
+          {verifyLink && (
+            <span>
+              <a href={verifyLink.url} target="_blank" rel="noopener noreferrer" className="verify-link">{verifyLink.text}</a>
+            </span>
+          )}
         </div>
       </div>
       <div className="rating">
@@ -154,6 +172,7 @@ function ResultCard({ r, n }) {
             <span className="num-big">{Number(r.rating).toFixed(1)}</span>
             <Stars rating={r.rating} />
             {r.reviews != null && <span className="reviews">{r.reviews} reviews</span>}
+            <span className="google-attr">via Google</span>
           </>
         )}
       </div>
@@ -207,7 +226,11 @@ function Welcome({ onPick }) {
         </div>
         <div className="trust-item">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          <span>Ratings sourced from real Google reviews</span>
+          <span>Ratings sourced from real Google reviews · No paid placements</span>
+        </div>
+        <div className="trust-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>Your conversation is never stored or sold</span>
         </div>
         <div className="trust-item">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -471,11 +494,11 @@ function App() {
                   <div key={i}>
                     <div className="results-head">
                       <h3>{cat.label}</h3>
-                      <span className="meta">{cat.results.length} matches · ranked by rating</span>
+                      <span className="meta">{cat.results.length} matches · Ranked by Google rating · No paid placements</span>
                     </div>
                     <div className="cards">
                       {cat.results.map((r, j) => (
-                        <ResultCard key={j} r={r} n={j + 1} />
+                        <ResultCard key={j} r={r} n={j + 1} label={cat.label} />
                       ))}
                     </div>
                   </div>
@@ -504,9 +527,9 @@ function App() {
 
                 {results && (
                   <p className="fineprint">
-                    Rankings synthesize public reviews, ratings, and disclosure data.
+                    Results ranked by Google rating. Data sourced from Google Places via Serper — no sponsored listings, no paid placements.
                     FindMyPro helps narrow your options — it is not legal, medical, or financial advice.
-                    Always verify credentials and consult directly before engaging any professional.
+                    Always verify credentials directly: lawyers via your <a href="https://www.americanbar.org/groups/legal_services/flh-home/" target="_blank" rel="noopener noreferrer">State Bar</a>, doctors via the <a href="https://www.fsmb.org/physician-data-center/" target="_blank" rel="noopener noreferrer">Medical Board</a>, financial advisors via <a href="https://brokercheck.finra.org" target="_blank" rel="noopener noreferrer">FINRA BrokerCheck</a>.
                   </p>
                 )}
               </section>

@@ -656,6 +656,21 @@ body::after {
   color: var(--ink-4);
   white-space: nowrap;
 }
+.card .rating .google-attr {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ink-4);
+  opacity: 0.7;
+  white-space: nowrap;
+}
+.card .row .verify-link {
+  font-size: 11px;
+  color: var(--accent-deep);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-tint-2);
+}
+.card .row .verify-link:hover { border-bottom-color: var(--accent-deep); }
 
 @media (max-width: 600px) {
   .card { grid-template-columns: 28px 1fr; }
@@ -754,6 +769,12 @@ body::after {
   line-height: 1.5;
   max-width: 540px;
 }
+.fineprint a {
+  color: var(--ink-3);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fineprint a:hover { color: var(--accent-deep); }
 
 /* ── Searching state ───────────────────────────────── */
 

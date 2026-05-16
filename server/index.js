@@ -57,7 +57,8 @@ RESPONSE FORMAT — always respond with valid JSON:
   "searches": [
     {
       "query": "best personal injury lawyer in Chicago",
-      "label": "Personal Injury Lawyer"
+      "label": "Personal Injury Lawyer",
+      "reason": "One sentence explaining why this specialist fits the user's specific situation."
     }
   ]
 }
@@ -67,6 +68,7 @@ FIELD RULES:
 - "searches": 1-3 items, only when readyToSearch is true. Query format: "best [specialist] in [city]"
 - "needsLocation": true when professional type is known but city is missing
 - "searches": empty array [] when readyToSearch is false
+- "reason": one sentence explaining why this specialist fits the user's described situation (e.g. "Your car accident puts this in personal injury territory, where a lawyer can pursue compensation for medical bills and lost wages.")
 
 EXAMPLES OF CORRECT BEHAVIOR:
 
@@ -164,6 +166,14 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+function buildWhy(reason, item) {
+  if (!reason) return null;
+  if (item.rating && item.reviews) {
+    return `${reason} Rated ${Number(item.rating).toFixed(1)}/5 across ${item.reviews} Google reviews.`;
+  }
+  return reason;
+}
+
 async function searchWithSerper(query) {
   // Use /places endpoint for rich structured data (ratings, phone, address)
   const placesRes = await fetch('https://google.serper.dev/places', {
@@ -229,7 +239,7 @@ app.post('/api/search', async (req, res) => {
     const { queries } = req.body;
 
     const results = await Promise.all(
-      queries.map(async ({ query, label }) => {
+      queries.map(async ({ query, label, reason }) => {
         // Use Gemini if USE_GEMINI=true in .env (requires GCP billing enabled)
         // otherwise uses Serper (default)
         let items = [];
@@ -243,6 +253,7 @@ app.post('/api/search', async (req, res) => {
         } else {
           items = await searchWithSerper(query);
         }
+        items = items.map(item => ({ ...item, why: buildWhy(reason, item) }));
         return { label, results: items };
       })
     );
