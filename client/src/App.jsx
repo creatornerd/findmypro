@@ -538,7 +538,7 @@ function App() {
       {toast && <div className="toast">{toast}</div>}
 
       <div className="site-credit">
-        Created by <span>Ahaan Hossain</span>
+        © {new Date().getFullYear()} Ahaan Hossain. All rights reserved.
       </div>
     </div>
   );
