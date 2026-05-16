@@ -85,16 +85,44 @@ function ShareIcon() {
 
 /* ─── Sub-components ───────────────────────────────── */
 
-function getVerifyLink(label) {
+const STATE_BAR_URLS = {
+  CA: (n) => `https://apps.calbar.ca.gov/attorney/LicenseeSearch/QuickSearch?freeText=${encodeURIComponent(n)}`,
+  FL: (n) => `https://www.floridabar.org/directories/find-mbr/?lName=${encodeURIComponent(n.split(' ').slice(-1)[0])}&fName=${encodeURIComponent(n.split(' ')[0])}`,
+  TX: (n) => `https://www.texasbar.com/AM/Template.cfm?Section=Find_A_Lawyer&Filter=1&lastName=${encodeURIComponent(n.split(' ').slice(-1)[0])}&firstName=${encodeURIComponent(n.split(' ')[0])}`,
+  NY: (n) => `https://iapps.courts.state.ny.us/attorneyservices/search?lastName=${encodeURIComponent(n.split(' ').slice(-1)[0])}&firstName=${encodeURIComponent(n.split(' ')[0])}&1=1`,
+  IL: (n) => `https://www.iardc.org/rladvsearch.asp?type=name&lastname=${encodeURIComponent(n.split(' ').slice(-1)[0])}&firstname=${encodeURIComponent(n.split(' ')[0])}`,
+  GA: (n) => `https://www.gabar.org/membersearch/?Keywords=${encodeURIComponent(n)}`,
+  PA: (n) => `https://www.padisciplinaryboard.org/for-the-public/find-attorney?p=Attorney/Public/Search&type=name&value=${encodeURIComponent(n)}`,
+  OH: (n) => `https://www.supremecourt.ohio.gov/AttorneySearch/#/search/${encodeURIComponent(n)}`,
+  AZ: (n) => `https://www.azbar.org/for-the-public/attorney-referral-service/?s=${encodeURIComponent(n)}`,
+  CO: (n) => `https://coloradosupremecourt.com/Search/AttorneySearch.asp?1=1&Name=${encodeURIComponent(n)}`,
+};
+
+function extractStateCode(address) {
+  if (!address) return null;
+  const m = address.match(/\b([A-Z]{2})\b(?:\s+\d{5})?/);
+  return m ? m[1] : null;
+}
+
+function getVerifyLink(label, name, address) {
   if (!label) return null;
   const l = label.toLowerCase();
+  const enc = encodeURIComponent(name || '');
+
   if (l.includes('lawyer') || l.includes('attorney') || l.includes('law')) {
-    return { url: 'https://www.americanbar.org/groups/legal_services/flh-home/', text: 'Verify with State Bar →' };
+    const state = extractStateCode(address);
+    const barFn = state && STATE_BAR_URLS[state];
+    if (barFn && name) {
+      return { url: barFn(name), text: `Verify with ${state} State Bar →` };
+    }
+    return { url: `https://www.avvo.com/find-a-lawyer?q=${enc}`, text: 'Look up on Avvo →' };
   }
-  if (l.includes('advisor') || l.includes('financial') || l.includes('cpa') || l.includes('broker') || l.includes('planner') || l.includes('wealth')) {
-    return { url: 'https://brokercheck.finra.org', text: 'Verify on FINRA BrokerCheck →' };
+
+  if (l.includes('advisor') || l.includes('financial') || l.includes('cpa') || l.includes('broker') || l.includes('planner') || l.includes('wealth') || l.includes('tax')) {
+    return { url: `https://brokercheck.finra.org/search/genericsearch/${enc}`, text: 'Check on FINRA BrokerCheck →' };
   }
-  return { url: 'https://www.fsmb.org/physician-data-center/', text: 'Verify Medical License →' };
+
+  return { url: `https://www.healthgrades.com/find-a-doctor?q=${enc}`, text: 'Look up on Healthgrades →' };
 }
 
 function Stars({ rating }) {
@@ -129,7 +157,7 @@ function Progress({ stage }) {
 }
 
 function ResultCard({ r, n, label }) {
-  const verifyLink = getVerifyLink(label);
+  const verifyLink = getVerifyLink(label, r.name, r.address);
   return (
     <article className="card">
       <div className="num">{String(n).padStart(2, '0')}</div>
