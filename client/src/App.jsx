@@ -212,7 +212,7 @@ function HowItWorks() {
   const steps = [
     { num: '01', title: 'Describe your situation', desc: 'Tell us what happened in plain words — no jargon, no forms.' },
     { num: '02', title: 'AI identifies the specialist', desc: 'We figure out if you need a lawyer, doctor, advisor, or all three.' },
-    { num: '03', title: 'See top-rated matches', desc: 'Real ratings and reviews from Google, ranked for your city.' },
+    { num: '03', title: 'See verified matches', desc: 'Real ratings from Google, ranked for your city — with direct links to verify credentials via State Bar, FINRA BrokerCheck, or Healthgrades.' },
   ];
   return (
     <div className="how-it-works">
@@ -263,6 +263,10 @@ function Welcome({ onPick }) {
         <div className="trust-item">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           <span>Always verify credentials before engaging any professional</span>
+        </div>
+        <div className="trust-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <span>Every result includes a direct credential verification link</span>
         </div>
       </div>
 
