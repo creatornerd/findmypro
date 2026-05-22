@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -951,7 +952,7 @@ function App() {
           </div>
         </footer>
 
-        <div className="site-credit">© {new Date().getFullYear()} Ahaan Hossain. All rights reserved.</div>
+        <div className="site-credit">© {new Date().getFullYear()} Ahaan Hossain. All rights reserved. · <Link to="/about" style={{ color: 'inherit', textDecoration: 'underline' }}>About</Link></div>
       </div>
 
       {authModal && <AuthModal initialTab={authModal} onClose={() => setAuthModal(null)} />}
