@@ -124,6 +124,7 @@ body::after {
   justify-content: space-between;
   padding: 22px 0 18px;
   border-bottom: 1px solid var(--rule);
+  z-index: 10;
 }
 
 .brand {
