@@ -944,3 +944,252 @@ body::after {
   color: var(--ink-3);
   font-weight: 500;
 }
+
+/* ── Sidebar ─────────────────────────────────────────── */
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: oklch(0% 0 0 / 0.18);
+  backdrop-filter: blur(1px);
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  width: 268px;
+  z-index: 40;
+  background: var(--paper-2);
+  border-right: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-100%);
+  transition: transform 0.26s cubic-bezier(.2,.7,.2,1);
+  box-shadow: none;
+}
+
+.sidebar.open {
+  transform: translateX(0);
+  box-shadow: 6px 0 32px oklch(0% 0 0 / 0.08);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 18px 14px;
+  border-bottom: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.sidebar-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.sidebar-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-4);
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+.sidebar-close:hover { color: var(--ink); background: var(--paper-3); }
+
+.new-chat-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 14px 10px;
+  padding: 10px 14px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.new-chat-btn:hover {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent-deep);
+}
+
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
+.no-sessions {
+  font-size: 13px;
+  color: var(--ink-4);
+  text-align: center;
+  padding: 24px 12px;
+  line-height: 1.6;
+  font-style: italic;
+  margin: 0;
+}
+
+.session-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+  transition: background 0.15s, border-color 0.15s;
+  width: 100%;
+}
+.session-item:hover {
+  background: var(--paper-3);
+  border-color: var(--rule);
+}
+.session-item.active {
+  background: var(--accent-tint);
+  border-color: var(--accent-tint-2);
+}
+
+.session-ttl {
+  font-size: 13.5px;
+  color: var(--ink);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.session-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-4);
+}
+
+/* ── Sidebar toggle button ──────────────────────────── */
+
+.sidebar-btn {
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Gate modal ──────────────────────────────────────── */
+
+.gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: oklch(0% 0 0 / 0.35);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.2s ease;
+}
+
+.gate-modal {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 24px;
+  padding: 40px 36px;
+  max-width: 440px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 24px 64px oklch(0% 0 0 / 0.18);
+  animation: rise 0.3s cubic-bezier(.2,.7,.2,1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.gate-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--ink);
+  margin: 0;
+}
+
+.gate-text {
+  font-size: 15px;
+  color: var(--ink-2);
+  line-height: 1.55;
+  max-width: 340px;
+  margin: 0;
+}
+
+.gate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.gate-reset {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-4);
+  margin: 0;
+}
+
+/* ── Hi name greeting ────────────────────────────────── */
+
+.hi-name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--ink-2);
+  font-style: italic;
+  letter-spacing: -0.01em;
+}
+
+/* ── Usage counter ───────────────────────────────────── */
+
+.usage-counter {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}

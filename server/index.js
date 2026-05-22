@@ -3,12 +3,40 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { verifyToken } = require('@clerk/backend');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const WEEKLY_LIMIT = 5;
+
+async function upstash(path, method = 'POST') {
+  const res = await fetch(`${process.env.UPSTASH_REDIS_REST_URL}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` },
+  });
+  return res.json();
+}
+
+async function checkRateLimit(ip) {
+  const key = `fmp:rl:${ip}`;
+  const { result: count } = await upstash(`/incr/${key}`);
+  if (count === 1) await upstash(`/expire/${key}/604800`); // 7-day TTL
+  return count <= WEEKLY_LIMIT;
+}
+
+async function isAuthenticated(authHeader) {
+  if (!authHeader?.startsWith('Bearer ')) return false;
+  try {
+    await verifyToken(authHeader.slice(7), { secretKey: process.env.CLERK_SECRET_KEY });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -237,6 +265,17 @@ async function searchWithGemini(query) {
 
 app.post('/api/search', async (req, res) => {
   try {
+    const authed = await isAuthenticated(req.headers.authorization);
+    if (!authed) {
+      const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+              || req.socket?.remoteAddress
+              || 'unknown';
+      const allowed = await checkRateLimit(ip);
+      if (!allowed) {
+        return res.status(429).json({ error: 'weekly_limit_reached', limit: WEEKLY_LIMIT });
+      }
+    }
+
     const { queries } = req.body;
 
     const results = await Promise.all(

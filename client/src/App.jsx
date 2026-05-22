@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { SignInButton, SignUpButton, UserButton, useUser, useAuth } from '@clerk/react';
 
 const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api';
-
-const STORAGE_KEY = 'findmypro_session';
+const STORAGE_KEY   = 'findmypro_session';
+const SESSIONS_KEY  = 'findmypro_sessions';
+const USAGE_KEY     = 'findmypro_usage';
+const WEEKLY_LIMIT  = 5;
 
 const SUGGESTIONS = [
   { kind: 'Legal',     text: "I got into a car accident in Chicago and my back hurts" },
@@ -21,7 +24,61 @@ const REFINEMENTS = [
   "What questions should I ask them?",
 ];
 
-/* ─── Icons ────────────────────────────────────────── */
+/* ─── Usage helpers ─────────────────────────────────── */
+
+function getUsage() {
+  try {
+    const raw = localStorage.getItem(USAGE_KEY);
+    if (!raw) return { count: 0, weekStart: Date.now() };
+    const u = JSON.parse(raw);
+    if (Date.now() - u.weekStart > 7 * 24 * 60 * 60 * 1000) {
+      return { count: 0, weekStart: Date.now() };
+    }
+    return u;
+  } catch {
+    return { count: 0, weekStart: Date.now() };
+  }
+}
+
+function incrementUsage() {
+  const u = getUsage();
+  const next = { ...u, count: u.count + 1 };
+  localStorage.setItem(USAGE_KEY, JSON.stringify(next));
+  return next.count;
+}
+
+/* ─── Session helpers ───────────────────────────────── */
+
+function sessionTitle(messages) {
+  const first = messages.find(m => m.role === 'user');
+  if (!first) return 'New conversation';
+  const t = first.content.trim();
+  return t.length > 46 ? t.slice(0, 46) + '…' : t;
+}
+
+function loadSessions() {
+  try { return JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function persistSessions(list) {
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(list.slice(0, 30)));
+}
+
+function relativeTime(ts) {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 2)  return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'Yesterday';
+  if (days < 7)  return `${days}d ago`;
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/* ─── Icons ─────────────────────────────────────────── */
 
 function CompassIcon({ size = 40 }) {
   return (
@@ -29,9 +86,9 @@ function CompassIcon({ size = 40 }) {
       <circle cx="20" cy="20" r="19" fill="var(--paper)" stroke="var(--ink)" strokeWidth="1.25"/>
       <circle cx="20" cy="20" r="15.5" stroke="var(--ink-4)" strokeWidth="0.6" strokeDasharray="1 3"/>
       <g stroke="var(--ink-3)" strokeWidth="0.8" strokeLinecap="round">
-        <line x1="20" y1="3" x2="20" y2="6"/>
+        <line x1="20" y1="3"  x2="20" y2="6"/>
         <line x1="20" y1="34" x2="20" y2="37"/>
-        <line x1="3" y1="20" x2="6" y2="20"/>
+        <line x1="3"  y1="20" x2="6"  y2="20"/>
         <line x1="34" y1="20" x2="37" y2="20"/>
       </g>
       <polygon points="20,7 22.6,20 20,16.5" fill="var(--accent-deep)"/>
@@ -39,7 +96,7 @@ function CompassIcon({ size = 40 }) {
       <polygon points="20,33 22.6,20 20,23.5" fill="var(--ink-2)"/>
       <polygon points="20,33 17.4,20 20,23.5" fill="var(--ink)"/>
       <circle cx="20" cy="20" r="2.6" fill="var(--paper)" stroke="var(--ink)" strokeWidth="0.8"/>
-      <circle cx="20" cy="20" r="1" fill="var(--accent-deep)"/>
+      <circle cx="20" cy="20" r="1"   fill="var(--accent-deep)"/>
     </svg>
   );
 }
@@ -83,7 +140,18 @@ function ShareIcon() {
   );
 }
 
-/* ─── Sub-components ───────────────────────────────── */
+function HistoryIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="1 4 1 10 7 10"/>
+      <path d="M3.51 15a9 9 0 1 0 .49-4.88"/>
+      <line x1="12" y1="7" x2="12" y2="12"/>
+      <line x1="12" y1="12" x2="15" y2="14"/>
+    </svg>
+  );
+}
+
+/* ─── Credential verification ───────────────────────── */
 
 const STATE_BAR_URLS = {
   CA: (n) => `https://apps.calbar.ca.gov/attorney/LicenseeSearch/QuickSearch?freeText=${encodeURIComponent(n)}`,
@@ -108,22 +176,19 @@ function getVerifyLink(label, name, address) {
   if (!label) return null;
   const l = label.toLowerCase();
   const enc = encodeURIComponent(name || '');
-
   if (l.includes('lawyer') || l.includes('attorney') || l.includes('law')) {
     const state = extractStateCode(address);
     const barFn = state && STATE_BAR_URLS[state];
-    if (barFn && name) {
-      return { url: barFn(name), text: `Verify with ${state} State Bar →` };
-    }
+    if (barFn && name) return { url: barFn(name), text: `Verify with ${state} State Bar →` };
     return { url: `https://www.avvo.com/find-a-lawyer?q=${enc}`, text: 'Look up on Avvo →' };
   }
-
   if (l.includes('advisor') || l.includes('financial') || l.includes('cpa') || l.includes('broker') || l.includes('planner') || l.includes('wealth') || l.includes('tax')) {
     return { url: `https://brokercheck.finra.org/search/genericsearch/${enc}`, text: 'Check on FINRA BrokerCheck →' };
   }
-
   return { url: `https://www.healthgrades.com/find-a-doctor?q=${enc}`, text: 'Look up on Healthgrades →' };
 }
+
+/* ─── Sub-components ────────────────────────────────── */
 
 function Stars({ rating }) {
   const full = Math.round(rating);
@@ -237,7 +302,7 @@ function Welcome({ onPick, onFocusInput }) {
 
   return (
     <section className="welcome">
-      <div className="eyebrow"><span className="dot"></span>AI-powered · Lawyers, Doctors & Advisors · Real Google ratings</div>
+      <div className="eyebrow"><span className="dot"></span>AI-powered · Lawyers, Doctors &amp; Advisors · Real Google ratings</div>
       <h1 className="headline">Find the right professional<br/><em>without guessing.</em></h1>
       <p className="lede">
         Describe what's going on in plain words. FindMyPro uses AI to identify
@@ -292,23 +357,131 @@ function Welcome({ onPick, onFocusInput }) {
   );
 }
 
-/* ─── Main App ─────────────────────────────────────── */
+/* ─── Sidebar ────────────────────────────────────────── */
+
+function Sidebar({ sessions, activeId, onSelect, onNew, open, onClose }) {
+  return (
+    <>
+      {open && <div className="sidebar-overlay" onClick={onClose} />}
+      <aside className={`sidebar ${open ? 'open' : ''}`} aria-label="Conversation history">
+        <div className="sidebar-head">
+          <span className="sidebar-title">History</span>
+          <button className="sidebar-close" onClick={onClose} aria-label="Close history">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <button className="new-chat-btn" onClick={() => { onNew(); onClose(); }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+          New conversation
+        </button>
+
+        <div className="session-list">
+          {sessions.length === 0 ? (
+            <p className="no-sessions">No past conversations yet.<br/>Start one below.</p>
+          ) : (
+            sessions.map(s => (
+              <button
+                key={s.id}
+                className={`session-item ${s.id === activeId ? 'active' : ''}`}
+                onClick={() => { onSelect(s); onClose(); }}
+              >
+                <span className="session-ttl">{s.title}</span>
+                <span className="session-time">{relativeTime(s.timestamp)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ─── Gate modal ─────────────────────────────────────── */
+
+function GateModal({ onClose }) {
+  return (
+    <div className="gate-overlay" onClick={onClose}>
+      <div className="gate-modal" onClick={e => e.stopPropagation()}>
+        <CompassIcon size={34} />
+        <h2 className="gate-title">You've used your {WEEKLY_LIMIT} free searches this week</h2>
+        <p className="gate-text">
+          Create a free account for unlimited searches and to save your conversation history across devices.
+        </p>
+        <div className="gate-actions">
+          <SignUpButton mode="modal">
+            <button className="cta-btn" onClick={onClose}>Create free account →</button>
+          </SignUpButton>
+          <SignInButton mode="modal">
+            <button className="ghost-btn" onClick={onClose}>Sign in to existing account</button>
+          </SignInButton>
+        </div>
+        <p className="gate-reset">Guest limit resets every 7 days.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Auth Controls ──────────────────────────────────── */
+
+function AuthControls() {
+  const { isSignedIn, user } = useUser();
+  if (isSignedIn) {
+    const name = user?.firstName
+      || user?.emailAddresses?.[0]?.emailAddress?.split('@')[0]
+      || '';
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {name && <span className="hi-name">Hi, {name}!</span>}
+        <UserButton afterSignOutUrl="/" />
+      </div>
+    );
+  }
+  return (
+    <>
+      <SignInButton mode="modal">
+        <button className="ghost-btn">Sign in</button>
+      </SignInButton>
+      <SignUpButton mode="modal">
+        <button className="ghost-btn" style={{ fontWeight: 600 }}>Sign up</button>
+      </SignUpButton>
+    </>
+  );
+}
+
+/* ─── Main App ───────────────────────────────────────── */
 
 function App() {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [results, setResults] = useState(null);
-  const [stage, setStage] = useState('listening');
-  const [toast, setToast] = useState(null);
-  const [restored, setRestored] = useState(false);
-  const taRef = useRef(null);
-  const mainRef = useRef(null);
-  const resultsRef = useRef(null);
+  const { getToken, isSignedIn: clerkSignedIn } = useAuth();
+
+  const sessionIdRef  = useRef(crypto.randomUUID());
+  const sessionsRef   = useRef(loadSessions());
+
+  const [sessions, setSessions]       = useState(() => loadSessions());
+  const [activeId, setActiveId]       = useState(null);
+  const [messages, setMessages]       = useState([]);
+  const [input, setInput]             = useState('');
+  const [loading, setLoading]         = useState(false);
+  const [searching, setSearching]     = useState(false);
+  const [results, setResults]         = useState(null);
+  const [stage, setStage]             = useState('listening');
+  const [toast, setToast]             = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [gateOpen, setGateOpen]       = useState(false);
+
+  const taRef          = useRef(null);
+  const mainRef        = useRef(null);
+  const resultsRef     = useRef(null);
   const prevResultsRef = useRef(null);
 
-  // Restore session from localStorage on mount
+  // Keep sessionsRef in sync
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+
+  // Restore last active session from localStorage on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -318,31 +491,44 @@ function App() {
           setMessages(session.messages);
           setResults(session.results || null);
           setStage(session.results ? 'found' : 'asking');
-          setRestored(true);
-          setTimeout(() => setRestored(false), 3000);
         }
       }
     } catch { /* ignore corrupt data */ }
   }, []);
 
-  // Save session to localStorage on change
+  // Auto-save current session whenever messages change
   useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ messages, results }));
+    if (messages.length === 0) return;
+    const id = sessionIdRef.current;
+    const session = {
+      id,
+      title:     sessionTitle(messages),
+      messages,
+      results,
+      stage,
+      timestamp: Date.now(),
+    };
+    const existing = sessionsRef.current.findIndex(s => s.id === id);
+    let next;
+    if (existing >= 0) {
+      next = [...sessionsRef.current];
+      next[existing] = session;
+    } else {
+      next = [session, ...sessionsRef.current];
     }
-  }, [messages, results]);
+    setSessions(next);
+    persistSessions(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ messages, results }));
+  }, [messages, results, stage]);
 
-  // Scroll to bottom for new messages/loading, scroll to top of results when results first appear
+  // Scroll behavior
   useEffect(() => {
     if (!mainRef.current) return;
     const resultsJustArrived = results && !prevResultsRef.current;
     prevResultsRef.current = results;
-
     if (resultsJustArrived && resultsRef.current) {
-      // Scroll results section into view from the top
       resultsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else if (messages.length > 0 && !results) {
-      // Scroll to bottom to show latest message / typing indicator
       mainRef.current.scrollTop = mainRef.current.scrollHeight;
     }
   }, [messages, results, loading, searching]);
@@ -358,6 +544,27 @@ function App() {
     ta.style.height = 'auto';
     ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
   };
+
+  const reset = useCallback(() => {
+    sessionIdRef.current = crypto.randomUUID();
+    setActiveId(null);
+    setMessages([]);
+    setResults(null);
+    setStage('listening');
+    setInput('');
+    setSearching(false);
+    localStorage.removeItem(STORAGE_KEY);
+    if (taRef.current) taRef.current.style.height = 'auto';
+  }, []);
+
+  const restoreSession = useCallback((session) => {
+    sessionIdRef.current = session.id;
+    setActiveId(session.id);
+    setMessages(session.messages);
+    setResults(session.results || null);
+    setStage(session.results ? 'found' : 'asking');
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ messages: session.messages, results: session.results }));
+  }, []);
 
   const send = async (textArg) => {
     const text = (textArg ?? input).trim();
@@ -386,21 +593,45 @@ function App() {
       setLoading(false);
 
       if (data.readyToSearch && data.searches?.length > 0) {
+        // Check weekly limit for guests
+        if (!clerkSignedIn) {
+          const usage = getUsage();
+          if (usage.count >= WEEKLY_LIMIT) {
+            setGateOpen(true);
+            setStage('asking');
+            return;
+          }
+        }
+
         setStage('searching');
         setSearching(true);
 
+        // Pass Clerk token for signed-in users (bypasses server rate limit)
+        const token = clerkSignedIn ? await getToken() : null;
+        const searchHeaders = { 'Content-Type': 'application/json' };
+        if (token) searchHeaders['Authorization'] = `Bearer ${token}`;
+
         const searchRes = await fetch(`${API_URL}/search`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: searchHeaders,
           body: JSON.stringify({ queries: data.searches }),
         });
+
+        if (searchRes.status === 429) {
+          setGateOpen(true);
+          setSearching(false);
+          setStage('asking');
+          return;
+        }
 
         if (!searchRes.ok) throw new Error('Search failed');
 
         const searchData = await searchRes.json();
         const searchResults = searchData.results;
 
-        // Handle empty results
+        // Increment guest usage on success
+        if (!clerkSignedIn) incrementUsage();
+
         if (!searchResults?.length || searchResults.every(c => !c.results?.length)) {
           setMessages(m => [...m, {
             role: 'assistant',
@@ -425,15 +656,6 @@ function App() {
       setSearching(false);
       setStage('asking');
     }
-  };
-
-  const reset = () => {
-    setMessages([]);
-    setResults(null);
-    setStage('listening');
-    setInput('');
-    setSearching(false);
-    localStorage.removeItem(STORAGE_KEY);
   };
 
   const copyResults = () => {
@@ -466,141 +688,170 @@ function App() {
     ? "Refine your search — e.g. 'show me someone closer' or 'I need a female doctor'…"
     : "Add more detail, or share your city…";
 
+  const hasSessions = sessions.length > 0;
+
   return (
-    <div className="stage">
-      <header className="topbar">
-        <Mark />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <span className="tagline">Lawyers · Doctors · Advisors</span>
-          {!empty && (
-            <button className="ghost-btn" onClick={reset} aria-label="Start a new search">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: 4 }}>
-                <polyline points="1 4 1 10 7 10"/>
-                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-              </svg>
-              New search
-            </button>
-          )}
-        </div>
-      </header>
+    <>
+      <Sidebar
+        sessions={sessions}
+        activeId={activeId}
+        onSelect={restoreSession}
+        onNew={reset}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
-      <main ref={mainRef}>
-        {empty ? (
-          <Welcome onPick={send} onFocusInput={() => { taRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); taRef.current?.focus(); }} />
-        ) : (
-          <>
-            {restored && (
-              <div className="restored-banner">
-                Restored your previous session.
-                <button onClick={reset}>Start fresh instead →</button>
-              </div>
+      <div className="stage">
+        <header className="topbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {hasSessions && (
+              <button
+                className="ghost-btn sidebar-btn"
+                onClick={() => setSidebarOpen(o => !o)}
+                aria-label="Toggle conversation history"
+              >
+                <HistoryIcon />
+              </button>
             )}
+            <Mark />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span className="tagline">Lawyers · Doctors · Advisors</span>
+            {!empty && (
+              <button className="ghost-btn" onClick={reset} aria-label="Start a new search">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: 4 }}>
+                  <polyline points="1 4 1 10 7 10"/>
+                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                </svg>
+                New search
+              </button>
+            )}
+            <AuthControls />
+          </div>
+        </header>
 
-            <div className="thread">
-              <Progress stage={stage} />
-              {messages.map((m, i) => (
-                <div key={i} className={`turn ${m.role}`}>
-                  <div className="avatar" aria-hidden="true">
-                    {m.role === 'user'
-                      ? <span className="av-you">You</span>
-                      : <MiniCompass />
-                    }
-                  </div>
-                  <div className="bubble">{m.content}</div>
-                </div>
-              ))}
-              {loading && (
-                <div className="turn assistant">
-                  <div className="avatar" aria-hidden="true"><MiniCompass /></div>
-                  <div className="bubble">
-                    <div className="dots"><span></span><span></span><span></span></div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {(searching || results) && (
-              <section className="results" ref={resultsRef}>
-                {searching && !results && (
-                  <div className="searching-note">
-                    Reviewing reputations, ratings, and proximity…
-                  </div>
-                )}
-                {results && results.map((cat, i) => (
-                  <div key={i}>
-                    <div className="results-head">
-                      <h3>{cat.label}</h3>
-                      <span className="meta">{cat.results.length} matches · Ranked by Google rating · No paid placements</span>
+        <main ref={mainRef}>
+          {empty ? (
+            <Welcome
+              onPick={send}
+              onFocusInput={() => {
+                taRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                taRef.current?.focus();
+              }}
+            />
+          ) : (
+            <>
+              <div className="thread">
+                <Progress stage={stage} />
+                {messages.map((m, i) => (
+                  <div key={i} className={`turn ${m.role}`}>
+                    <div className="avatar" aria-hidden="true">
+                      {m.role === 'user'
+                        ? <span className="av-you">You</span>
+                        : <MiniCompass />
+                      }
                     </div>
-                    <div className="cards">
-                      {cat.results.map((r, j) => (
-                        <ResultCard key={j} r={r} n={j + 1} label={cat.label} />
-                      ))}
-                    </div>
+                    <div className="bubble">{m.content}</div>
                   </div>
                 ))}
-
-                {results && (
-                  <div className="results-actions">
-                    <button className="action-btn" onClick={copyResults}>
-                      <ShareIcon /> Copy results
-                    </button>
-                  </div>
-                )}
-
-                {results && (
-                  <div className="refine-section">
-                    <div className="refine-label">Refine your search</div>
-                    <div className="refine-chips">
-                      {REFINEMENTS.map((r, i) => (
-                        <button key={i} className="refine-chip" onClick={() => send(r)}>
-                          {r}
-                        </button>
-                      ))}
+                {loading && (
+                  <div className="turn assistant">
+                    <div className="avatar" aria-hidden="true"><MiniCompass /></div>
+                    <div className="bubble">
+                      <div className="dots"><span></span><span></span><span></span></div>
                     </div>
                   </div>
                 )}
+              </div>
 
-                {results && (
-                  <p className="fineprint">
-                    Results ranked by Google rating. Data sourced from Google Places via Serper — no sponsored listings, no paid placements.
-                    FindMyPro helps narrow your options — it is not legal, medical, or financial advice.
-                    Always verify credentials directly: lawyers via your <a href="https://www.americanbar.org/groups/legal_services/flh-home/" target="_blank" rel="noopener noreferrer">State Bar</a>, doctors via the <a href="https://www.fsmb.org/physician-data-center/" target="_blank" rel="noopener noreferrer">Medical Board</a>, financial advisors via <a href="https://brokercheck.finra.org" target="_blank" rel="noopener noreferrer">FINRA BrokerCheck</a>.
-                  </p>
-                )}
-              </section>
+              {(searching || results) && (
+                <section className="results" ref={resultsRef}>
+                  {searching && !results && (
+                    <div className="searching-note">
+                      Reviewing reputations, ratings, and proximity…
+                    </div>
+                  )}
+                  {results && results.map((cat, i) => (
+                    <div key={i}>
+                      <div className="results-head">
+                        <h3>{cat.label}</h3>
+                        <span className="meta">{cat.results.length} matches · Ranked by Google rating · No paid placements</span>
+                      </div>
+                      <div className="cards">
+                        {cat.results.map((r, j) => (
+                          <ResultCard key={j} r={r} n={j + 1} label={cat.label} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {results && (
+                    <div className="results-actions">
+                      <button className="action-btn" onClick={copyResults}>
+                        <ShareIcon /> Copy results
+                      </button>
+                    </div>
+                  )}
+
+                  {results && (
+                    <div className="refine-section">
+                      <div className="refine-label">Refine your search</div>
+                      <div className="refine-chips">
+                        {REFINEMENTS.map((r, i) => (
+                          <button key={i} className="refine-chip" onClick={() => send(r)}>
+                            {r}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {results && (
+                    <p className="fineprint">
+                      Results ranked by Google rating. Data sourced from Google Places via Serper — no sponsored listings, no paid placements.
+                      FindMyPro helps narrow your options — it is not legal, medical, or financial advice.
+                      Always verify credentials directly: lawyers via your <a href="https://www.americanbar.org/groups/legal_services/flh-home/" target="_blank" rel="noopener noreferrer">State Bar</a>, doctors via the <a href="https://www.fsmb.org/physician-data-center/" target="_blank" rel="noopener noreferrer">Medical Board</a>, financial advisors via <a href="https://brokercheck.finra.org" target="_blank" rel="noopener noreferrer">FINRA BrokerCheck</a>.
+                    </p>
+                  )}
+                </section>
+              )}
+            </>
+          )}
+        </main>
+
+        <footer className="composer">
+          <div className="composer-inner">
+            <textarea
+              ref={taRef}
+              value={input}
+              onChange={e => { setInput(e.target.value); adjustTA(); }}
+              onKeyDown={onKey}
+              placeholder={placeholderText}
+              aria-label="Describe your situation"
+              rows={1}
+            />
+            <button className="send" onClick={() => send()} disabled={!input.trim() || loading} aria-label="Send message">
+              <SendIcon />
+            </button>
+          </div>
+          <div className="composer-foot">
+            <span>Press <kbd>↵</kbd> to send · <kbd>⇧↵</kbd> for newline</span>
+            {!clerkSignedIn && (
+              <span className="usage-counter">
+                {Math.max(0, WEEKLY_LIMIT - getUsage().count)} free {getUsage().count >= WEEKLY_LIMIT - 1 ? 'search' : 'searches'} left this week
+              </span>
             )}
-          </>
-        )}
-      </main>
+          </div>
+        </footer>
 
-      <footer className="composer">
-        <div className="composer-inner">
-          <textarea
-            ref={taRef}
-            value={input}
-            onChange={e => { setInput(e.target.value); adjustTA(); }}
-            onKeyDown={onKey}
-            placeholder={placeholderText}
-            aria-label="Describe your situation"
-            rows={1}
-          />
-          <button className="send" onClick={() => send()} disabled={!input.trim() || loading} aria-label="Send message">
-            <SendIcon />
-          </button>
+        <div className="site-credit">
+          © {new Date().getFullYear()} Ahaan Hossain. All rights reserved.
         </div>
-        <div className="composer-foot">
-          <span>Press <kbd>↵</kbd> to send · <kbd>⇧↵</kbd> for newline</span>
-          <span>Plain English. No forms.</span>
-        </div>
-      </footer>
-
-      {toast && <div className="toast">{toast}</div>}
-
-      <div className="site-credit">
-        © {new Date().getFullYear()} Ahaan Hossain. All rights reserved.
       </div>
-    </div>
+
+      {gateOpen && <GateModal onClose={() => setGateOpen(false)} />}
+      {toast && <div className="toast">{toast}</div>}
+    </>
   );
 }
 
