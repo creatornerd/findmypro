@@ -688,7 +688,9 @@ function App() {
     ? "Refine your search — e.g. 'show me someone closer' or 'I need a female doctor'…"
     : "Add more detail, or share your city…";
 
-  const hasSessions = sessions.length > 0;
+  // Only show the history button when there are sessions from PREVIOUS conversations,
+  // not the current one — prevents topbar layout shift mid-conversation.
+  const hasPastSessions = sessions.some(s => s.id !== sessionIdRef.current);
 
   return (
     <>
@@ -704,7 +706,7 @@ function App() {
       <div className="stage">
         <header className="topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {hasSessions && (
+            {hasPastSessions && (
               <button
                 className="ghost-btn sidebar-btn"
                 onClick={() => setSidebarOpen(o => !o)}
