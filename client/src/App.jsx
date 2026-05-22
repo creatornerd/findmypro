@@ -557,7 +557,7 @@ function GateModal({ onClose, onShowAuth }) {
 
 /* ─── Auth controls ──────────────────────────────────── */
 
-function AuthControls({ session, onShowAuth }) {
+function AuthControls({ session, onShowAuth, onSignOut }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const name = userName(session);
@@ -584,7 +584,7 @@ function AuthControls({ session, onShowAuth }) {
         {menuOpen && (
           <div className="avatar-menu">
             <span className="avatar-menu-email">{session.user.email}</span>
-            <button className="avatar-menu-item" onClick={() => { setMenuOpen(false); supabase.auth.signOut(); }}>
+            <button className="avatar-menu-item" onClick={() => { setMenuOpen(false); onSignOut(); }}>
               Sign out
             </button>
           </div>
@@ -854,7 +854,14 @@ function App() {
                 New search
               </button>
             )}
-            <AuthControls session={supaSession} onShowAuth={setAuthModal} />
+            <AuthControls
+              session={supaSession}
+              onShowAuth={setAuthModal}
+              onSignOut={async () => {
+                await supabase.auth.signOut();
+                setSupaSession(null);
+              }}
+            />
           </div>
         </header>
 
