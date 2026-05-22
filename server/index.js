@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { verifyToken } = require('@clerk/backend');
+const { createClient } = require('@supabase/supabase-js');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 
@@ -28,11 +28,13 @@ async function checkRateLimit(ip) {
   return count <= WEEKLY_LIMIT;
 }
 
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+
 async function isAuthenticated(authHeader) {
   if (!authHeader?.startsWith('Bearer ')) return false;
   try {
-    await verifyToken(authHeader.slice(7), { secretKey: process.env.CLERK_SECRET_KEY });
-    return true;
+    const { data: { user }, error } = await supabase.auth.getUser(authHeader.slice(7));
+    return !error && !!user;
   } catch {
     return false;
   }
