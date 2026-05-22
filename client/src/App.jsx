@@ -557,21 +557,37 @@ function GateModal({ onClose, onShowAuth }) {
 /* ─── Auth controls ──────────────────────────────────── */
 
 function AuthControls({ session, onShowAuth }) {
-  const handleSignOut = () => supabase.auth.signOut();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
   const name = userName(session);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [menuOpen]);
 
   if (session) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10 }} ref={menuRef}>
         {name && <span className="hi-name">Hi, {name}!</span>}
         <button
           className="user-avatar"
-          onClick={handleSignOut}
-          title="Sign out"
-          aria-label="Sign out"
+          onClick={() => setMenuOpen(o => !o)}
+          aria-label="Account menu"
+          aria-expanded={menuOpen}
         >
           {(name?.[0] || session.user.email?.[0] || '?').toUpperCase()}
         </button>
+        {menuOpen && (
+          <div className="avatar-menu">
+            <span className="avatar-menu-email">{session.user.email}</span>
+            <button className="avatar-menu-item" onClick={() => { setMenuOpen(false); supabase.auth.signOut(); }}>
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
     );
   }
