@@ -160,8 +160,9 @@ body::after {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
+  white-space: nowrap;
 }
-@media (max-width: 600px) { .tagline { display: none; } }
+@media (max-width: 860px) { .tagline { display: none; } }
 
 .ghost-btn {
   background: transparent;
