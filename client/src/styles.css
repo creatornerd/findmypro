@@ -161,6 +161,8 @@ body::after {
   text-transform: uppercase;
   color: var(--ink-3);
   white-space: nowrap;
+  margin-right: auto;
+  padding-left: 32px;
 }
 @media (max-width: 860px) { .tagline { display: none; } }
 
