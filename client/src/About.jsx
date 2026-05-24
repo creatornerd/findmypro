@@ -151,9 +151,12 @@ export default function About() {
               <div className="about-bio-name">Ahaan Hossain</div>
               <p className="about-bio-text">
                 Ahaan is a 13-year-old student developer in the Redmond, Washington area,
-                currently in middle school. He built FindMyPro to make it easier for people
-                to find the right professional without having to navigate confusing directories
-                or know exactly what kind of help they need upfront.
+                currently in middle school. He has a passion for building tools that solve
+                real problems and is always seeking feedback to make his projects better. 
+                When he isn't on the computer, Ahaan enjoys doing extracurriculars like Piano,
+                Robotics, and Math. Access his github to see the code or more details about the 
+                project and contact him with any issuesvia email using the links below, and 
+                check out his other projects!
               </p>
               <div className="about-bio-links">
                 <a href="https://github.com/creatornerd/findmypro" target="_blank" rel="noopener noreferrer">
