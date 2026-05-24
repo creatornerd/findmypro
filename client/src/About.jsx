@@ -153,9 +153,9 @@ export default function About() {
                 Ahaan is a 13-year-old student developer in the Redmond, Washington area,
                 currently in middle school. He has a passion for building tools that solve
                 real problems and is always seeking feedback to make his projects better. 
-                When he isn't on the computer, Ahaan enjoys doing extracurriculars like Piano,
-                Robotics, and Math. Access his github to see the code or more details about the 
-                project and contact him with any issuesvia email using the links below, and 
+                When he isn't on the computer, Ahaan enjoys doing extracurriculars like piano,
+                robotics, and Math. Access his github to see the code or more details about the 
+                project and contact him with any issues via email using the links below, and 
                 check out his other projects!
               </p>
               <div className="about-bio-links">
