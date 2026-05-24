@@ -27,6 +27,37 @@ html, body, #root { height: 100%; margin: 0; padding: 0; }
   --shadow-lift: 0 1px 2px oklch(0% 0 0 / 0.04), 0 8px 24px -8px oklch(0% 0 0 / 0.10);
 }
 
+/* ── Dark mode ──────────────────────────────────────── */
+
+[data-theme="dark"] {
+  --paper:    oklch(15% 0.008 80);
+  --paper-2:  oklch(19% 0.010 80);
+  --paper-3:  oklch(23% 0.012 80);
+  --ink:      oklch(92% 0.008 80);
+  --ink-2:    oklch(74% 0.010 80);
+  --ink-3:    oklch(56% 0.010 80);
+  --ink-4:    oklch(42% 0.010 80);
+  --rule:     oklch(27% 0.012 80);
+
+  --accent:        oklch(68% 0.135 55);
+  --accent-deep:   oklch(72% 0.140 55);
+  --accent-tint:   oklch(22% 0.040 60);
+  --accent-tint-2: oklch(28% 0.060 60);
+
+  --shadow-card: 0 1px 0 oklch(0% 0 0 / 0.12), 0 0 0 1px oklch(0% 0 0 / 0.18);
+  --shadow-lift: 0 1px 2px oklch(0% 0 0 / 0.2), 0 8px 24px -8px oklch(0% 0 0 / 0.4);
+}
+
+[data-theme="dark"] body::after {
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400' fill='none' stroke='%23fff' stroke-width='0.4'><circle cx='200' cy='200' r='198'/><circle cx='200' cy='200' r='160'/><circle cx='200' cy='200' r='120'/><circle cx='200' cy='200' r='80'/><circle cx='200' cy='200' r='40'/><line x1='200' y1='2' x2='200' y2='398'/><line x1='2' y1='200' x2='398' y2='200'/><line x1='60' y1='60' x2='340' y2='340'/><line x1='340' y1='60' x2='60' y2='340'/></svg>");
+}
+
+[data-theme="dark"] .stage::before {
+  mix-blend-mode: screen;
+  opacity: 0.08;
+}
+
 ::selection { background: var(--accent-tint-2); color: var(--ink); }
 
 body {
@@ -1111,6 +1142,61 @@ body::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ── Theme toggle button ──────────────────────────── */
+
+.theme-btn {
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink-3);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+  flex-shrink: 0;
+}
+.theme-btn:hover {
+  border-color: var(--accent-deep);
+  color: var(--accent-deep);
+  background: var(--accent-tint);
+}
+
+/* ── Sidebar footer / clear history ─────────────────── */
+
+.sidebar-footer {
+  padding: 10px 14px 16px;
+  border-top: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.clear-history-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 14px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.clear-history-btn:hover {
+  background: oklch(45% 0.18 30 / 0.06);
+  border-color: oklch(45% 0.18 30 / 0.3);
+  color: oklch(45% 0.18 30);
 }
 
 /* ── Gate modal ──────────────────────────────────────── */

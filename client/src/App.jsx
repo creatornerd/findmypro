@@ -61,6 +61,15 @@ function sessionTitle(messages) {
   return t.length > 46 ? t.slice(0, 46) + '…' : t;
 }
 
+function generateChatTitle(searches) {
+  if (!searches?.length) return null;
+  const label = searches[0].label;
+  const query = searches[0].query || '';
+  const cityMatch = query.match(/\bin\s+([A-Za-z][a-zA-Z\s]+?)(?:\s*$)/i);
+  const city = cityMatch ? cityMatch[1].trim() : null;
+  return city ? `${label} · ${city}` : label;
+}
+
 function loadSessions() {
   try { return JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]'); }
   catch { return []; }
@@ -161,6 +170,41 @@ function ShareIcon() {
       <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
       <polyline points="16 6 12 2 8 6"/>
       <line x1="12" y1="2" x2="12" y2="15"/>
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/>
+      <line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/>
+      <line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      <path d="M10 11v6M14 11v6"/>
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
     </svg>
   );
 }
@@ -372,7 +416,7 @@ function Welcome({ onPick, onFocusInput }) {
 
 /* ─── Sidebar ────────────────────────────────────────── */
 
-function Sidebar({ sessions, activeId, onSelect, onNew, open, onClose }) {
+function Sidebar({ sessions, activeId, onSelect, onNew, onClearAll, open, onClose }) {
   return (
     <>
       {open && <div className="sidebar-overlay" onClick={onClose} />}
@@ -407,6 +451,13 @@ function Sidebar({ sessions, activeId, onSelect, onNew, open, onClose }) {
             ))
           )}
         </div>
+        {sessions.length > 0 && (
+          <div className="sidebar-footer">
+            <button className="clear-history-btn" onClick={onClearAll}>
+              <TrashIcon /> Clear all history
+            </button>
+          </div>
+        )}
       </aside>
     </>
   );
@@ -603,8 +654,9 @@ function AuthControls({ session, onShowAuth, onSignOut }) {
 /* ─── Main App ───────────────────────────────────────── */
 
 function App() {
-  const sessionIdRef  = useRef(crypto.randomUUID());
-  const sessionsRef   = useRef(loadSessions());
+  const sessionIdRef    = useRef(crypto.randomUUID());
+  const sessionsRef     = useRef(loadSessions());
+  const customTitleRef  = useRef(null);
 
   const [supaSession, setSupaSession]     = useState(null);
   const [sessions, setSessions]           = useState(() => loadSessions());
@@ -619,6 +671,11 @@ function App() {
   const [sidebarOpen, setSidebarOpen]     = useState(false);
   const [gateOpen, setGateOpen]           = useState(false);
   const [authModal, setAuthModal]         = useState(null); // null | 'signin' | 'signup'
+  const [darkMode, setDarkMode]           = useState(() => {
+    const saved = localStorage.getItem('findmypro_theme');
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
 
   const taRef          = useRef(null);
   const mainRef        = useRef(null);
@@ -634,6 +691,11 @@ function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    localStorage.setItem('findmypro_theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
 
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
 
@@ -656,7 +718,8 @@ function App() {
   useEffect(() => {
     if (messages.length === 0) return;
     const id = sessionIdRef.current;
-    const session = { id, title: sessionTitle(messages), messages, results, stage, timestamp: Date.now() };
+    const title = customTitleRef.current || sessionTitle(messages);
+    const session = { id, title, messages, results, stage, timestamp: Date.now() };
     const existing = sessionsRef.current.findIndex(s => s.id === id);
     let next;
     if (existing >= 0) { next = [...sessionsRef.current]; next[existing] = session; }
@@ -692,6 +755,7 @@ function App() {
 
   const reset = useCallback(() => {
     sessionIdRef.current = crypto.randomUUID();
+    customTitleRef.current = null;
     setActiveId(null);
     setMessages([]);
     setResults(null);
@@ -699,6 +763,23 @@ function App() {
     setInput('');
     setSearching(false);
     localStorage.removeItem(STORAGE_KEY);
+    if (taRef.current) taRef.current.style.height = 'auto';
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    if (!window.confirm('Clear all conversation history? This cannot be undone.')) return;
+    persistSessions([]);
+    setSessions([]);
+    localStorage.removeItem(STORAGE_KEY);
+    customTitleRef.current = null;
+    sessionIdRef.current = crypto.randomUUID();
+    setActiveId(null);
+    setMessages([]);
+    setResults(null);
+    setStage('listening');
+    setInput('');
+    setSearching(false);
+    setSidebarOpen(false);
     if (taRef.current) taRef.current.style.height = 'auto';
   }, []);
 
@@ -736,6 +817,9 @@ function App() {
       setLoading(false);
 
       if (data.readyToSearch && data.searches?.length > 0) {
+        const smartTitle = generateChatTitle(data.searches);
+        if (smartTitle) customTitleRef.current = smartTitle;
+
         // Check weekly limit for guests
         if (!supaSession) {
           const usage = getUsage();
@@ -829,6 +913,7 @@ function App() {
         activeId={activeId}
         onSelect={restoreSession}
         onNew={reset}
+        onClearAll={clearHistory}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
@@ -843,7 +928,7 @@ function App() {
             )}
             <Mark />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span className="tagline">Lawyers · Doctors · Advisors</span>
             {!empty && (
               <button className="ghost-btn" onClick={reset} aria-label="Start a new search">
@@ -854,6 +939,13 @@ function App() {
                 New search
               </button>
             )}
+            <button
+              className="theme-btn"
+              onClick={() => setDarkMode(d => !d)}
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {darkMode ? <SunIcon /> : <MoonIcon />}
+            </button>
             <AuthControls
               session={supaSession}
               onShowAuth={setAuthModal}
