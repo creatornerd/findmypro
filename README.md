@@ -1,2 +1,3 @@
-This is an website that takes the given data that you provide and forward you to a lawyer, medical professional, or financial specialist in your area. This is run by the latest gemini model and serper api.
-Copyright 2026 Ahaan Hossain©️ Contact him via his email ahaan.hossain@yahoo.com
+This is a website that takes the given data that you provide and forwards you to a lawyer, medical professional, or financial specialist in your area. This is run by the latest Gemini model and serper api. As a disclaimer, and as of 5/24/2026, this website is not making any money.
+Copyright 2026 Ahaan Hossain©️. All rights reserved. Contact him via his email ahaan.hossain@yahoo.com
+DISCLAIMER: Although this project is public, any unauthorized usage of this project will be reported, and all legal action will be taken. If you believe that this website violates your own copyright policies, contact me immediately. 
