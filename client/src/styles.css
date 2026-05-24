@@ -49,8 +49,8 @@ html, body, #root { height: 100%; margin: 0; padding: 0; }
 }
 
 [data-theme="dark"] body::after {
-  opacity: 0.13;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400' fill='none' stroke='%23ffffff' stroke-width='0.7'><circle cx='200' cy='200' r='198'/><circle cx='200' cy='200' r='160'/><circle cx='200' cy='200' r='120'/><circle cx='200' cy='200' r='80'/><circle cx='200' cy='200' r='40'/><line x1='200' y1='2' x2='200' y2='398'/><line x1='2' y1='200' x2='398' y2='200'/><line x1='60' y1='60' x2='340' y2='340'/><line x1='340' y1='60' x2='60' y2='340'/></svg>");
+  opacity: 0.08;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400' fill='none' stroke='%23ffffff' stroke-width='0.55'><circle cx='200' cy='200' r='198'/><circle cx='200' cy='200' r='160'/><circle cx='200' cy='200' r='120'/><circle cx='200' cy='200' r='80'/><circle cx='200' cy='200' r='40'/><line x1='200' y1='2' x2='200' y2='398'/><line x1='2' y1='200' x2='398' y2='200'/><line x1='60' y1='60' x2='340' y2='340'/><line x1='340' y1='60' x2='60' y2='340'/></svg>");
 }
 
 [data-theme="dark"] .stage::before {
