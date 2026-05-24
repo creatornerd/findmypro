@@ -531,7 +531,7 @@ body::after {
 .turn.assistant .bubble {
   background: var(--paper-2);
   border: 1px solid var(--rule);
-  color: #1a1a1a;
+  color: var(--ink);
   border-bottom-left-radius: 8px;
 }
 
