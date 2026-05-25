@@ -370,7 +370,10 @@ function Welcome({ onPick, onFocusInput }) {
       <p className="lede">
         Describe what's going on in plain words. FindMyPro uses AI to identify
         the type of specialist you need — then surfaces the highest-rated,
-        verified practitioners near you. No directories. No forms.
+        verified practitioners near you. No directories. No forms. As a note,
+        FindMyPro currently has the capability to find lawyers, doctors, and
+        financial advisors, and please specify if you are looking for a professional
+        outside of the US.
       </p>
       <button className="cta-btn" onClick={onFocusInput}>Describe your situation →</button>
       <HowItWorks />
