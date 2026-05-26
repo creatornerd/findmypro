@@ -79,6 +79,54 @@ function persistSessions(list) {
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(list.slice(0, 30)));
 }
 
+/* ─── Supabase session sync ─────────────────────────── */
+
+async function syncSessionToSupabase(session, userId) {
+  try {
+    await supabase.from('chat_sessions').upsert({
+      id:       session.id,
+      user_id:  userId,
+      title:    session.title,
+      messages: session.messages,
+      results:  session.results || null,
+      stage:    session.stage,
+      ts:       session.timestamp,
+    });
+  } catch (err) {
+    console.warn('Session sync failed:', err);
+  }
+}
+
+async function loadSessionsFromSupabase() {
+  try {
+    const { data, error } = await supabase
+      .from('chat_sessions')
+      .select('*')
+      .order('ts', { ascending: false })
+      .limit(30);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id:        r.id,
+      title:     r.title,
+      messages:  r.messages,
+      results:   r.results,
+      stage:     r.stage,
+      timestamp: r.ts,
+    }));
+  } catch (err) {
+    console.warn('Session load failed:', err);
+    return [];
+  }
+}
+
+async function deleteAllSupbaseSessions() {
+  try {
+    await supabase.from('chat_sessions').delete().neq('id', '');
+  } catch (err) {
+    console.warn('Session delete failed:', err);
+  }
+}
+
 function relativeTime(ts) {
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
@@ -660,6 +708,7 @@ function App() {
   const sessionIdRef    = useRef(crypto.randomUUID());
   const sessionsRef     = useRef(loadSessions());
   const customTitleRef  = useRef(null);
+  const syncTimerRef    = useRef(null);
 
   const [supaSession, setSupaSession]     = useState(null);
   const [sessions, setSessions]           = useState(() => loadSessions());
@@ -700,6 +749,23 @@ function App() {
     localStorage.setItem('findmypro_theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
 
+  // When user logs in, load their cloud sessions and merge with local
+  useEffect(() => {
+    if (!supaSession) return;
+    loadSessionsFromSupabase().then(cloud => {
+      setSessions(prev => {
+        const merged = [...cloud];
+        for (const local of prev) {
+          if (!merged.find(s => s.id === local.id)) merged.push(local);
+        }
+        merged.sort((a, b) => b.timestamp - a.timestamp);
+        const top30 = merged.slice(0, 30);
+        persistSessions(top30);
+        return top30;
+      });
+    });
+  }, [supaSession?.user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
 
   // Restore last active session
@@ -717,7 +783,7 @@ function App() {
     } catch { /* ignore */ }
   }, []);
 
-  // Auto-save current session
+  // Auto-save current session (localStorage + debounced Supabase sync)
   useEffect(() => {
     if (messages.length === 0) return;
     const id = sessionIdRef.current;
@@ -730,7 +796,15 @@ function App() {
     setSessions(next);
     persistSessions(next);
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ messages, results }));
-  }, [messages, results, stage]);
+
+    // Sync to Supabase for logged-in users (debounced 2s to avoid hammering)
+    if (supaSession?.user?.id) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = setTimeout(() => {
+        syncSessionToSupabase(session, supaSession.user.id);
+      }, 2000);
+    }
+  }, [messages, results, stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scroll
   useEffect(() => {
@@ -784,7 +858,8 @@ function App() {
     setSearching(false);
     setSidebarOpen(false);
     if (taRef.current) taRef.current.style.height = 'auto';
-  }, []);
+    if (supaSession?.user?.id) deleteAllSupbaseSessions();
+  }, [supaSession]);
 
   const restoreSession = useCallback((s) => {
     sessionIdRef.current = s.id;
