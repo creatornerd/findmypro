@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api';
 
@@ -600,6 +601,7 @@ function App() {
       <div className="site-credit">
         © {new Date().getFullYear()} Ahaan Hossain. All rights reserved.
       </div>
+      <SpeedInsights />
     </div>
   );
 }
