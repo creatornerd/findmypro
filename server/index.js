@@ -11,7 +11,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const WEEKLY_LIMIT = 5;
+const GUEST_WEEKLY_LIMIT = 5;
+const AUTH_WEEKLY_LIMIT = 15;
+const REFERRAL_BONUS = 10;
 
 async function upstash(path, method = 'POST') {
   const res = await fetch(`${process.env.UPSTASH_REDIS_REST_URL}${path}`, {
@@ -24,20 +26,47 @@ async function upstash(path, method = 'POST') {
 async function checkRateLimit(ip) {
   const key = `fmp:rl:${ip}`;
   const { result: count } = await upstash(`/incr/${key}`);
-  if (count === 1) await upstash(`/expire/${key}/604800`); // 7-day TTL
-  return count <= WEEKLY_LIMIT;
+  if (count === 1) await upstash(`/expire/${key}/604800`);
+  return count <= GUEST_WEEKLY_LIMIT;
+}
+
+async function checkAuthRateLimit(userId, bonusSearches = 0) {
+  const key = `fmp:rl:user:${userId}`;
+  const { result: count } = await upstash(`/incr/${key}`);
+  if (count === 1) await upstash(`/expire/${key}/604800`);
+  return count <= AUTH_WEEKLY_LIMIT + bonusSearches;
 }
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-async function isAuthenticated(authHeader) {
-  if (!authHeader?.startsWith('Bearer ')) return false;
+async function getAuthenticatedUser(authHeader) {
+  if (!authHeader?.startsWith('Bearer ')) return null;
   try {
     const { data: { user }, error } = await supabase.auth.getUser(authHeader.slice(7));
-    return !error && !!user;
+    if (error || !user) return null;
+    return user;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function isAuthenticated(authHeader) {
+  return !!(await getAuthenticatedUser(authHeader));
+}
+
+function generateReferralCode(userId) {
+  const hash = userId.replace(/-/g, '').slice(0, 8);
+  return hash;
+}
+
+async function getBonusSearches(userId) {
+  const { data } = await supabase
+    .from('bonus_searches')
+    .select('bonus_count')
+    .eq('user_id', userId)
+    .single();
+  return data?.bonus_count || 0;
 }
 
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -267,14 +296,20 @@ async function searchWithGemini(query) {
 
 app.post('/api/search', async (req, res) => {
   try {
-    const authed = await isAuthenticated(req.headers.authorization);
-    if (!authed) {
+    const user = await getAuthenticatedUser(req.headers.authorization);
+    if (!user) {
       const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
               || req.socket?.remoteAddress
               || 'unknown';
       const allowed = await checkRateLimit(ip);
       if (!allowed) {
-        return res.status(429).json({ error: 'weekly_limit_reached', limit: WEEKLY_LIMIT });
+        return res.status(429).json({ error: 'weekly_limit_reached', limit: GUEST_WEEKLY_LIMIT });
+      }
+    } else {
+      const bonus = await getBonusSearches(user.id);
+      const allowed = await checkAuthRateLimit(user.id, bonus);
+      if (!allowed) {
+        return res.status(429).json({ error: 'weekly_limit_reached', limit: AUTH_WEEKLY_LIMIT + bonus });
       }
     }
 
@@ -282,8 +317,6 @@ app.post('/api/search', async (req, res) => {
 
     const results = await Promise.all(
       queries.map(async ({ query, label, reason }) => {
-        // Use Gemini if USE_GEMINI=true in .env (requires GCP billing enabled)
-        // otherwise uses Serper (default)
         let items = [];
         if (process.env.USE_GEMINI === 'true') {
           try {
@@ -307,6 +340,94 @@ app.post('/api/search', async (req, res) => {
   }
 });
 
+/* ─── Referral endpoints ───────────────────────────────── */
+
+app.get('/api/referral/info', async (req, res) => {
+  try {
+    const user = await getAuthenticatedUser(req.headers.authorization);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const referralCode = generateReferralCode(user.id);
+
+    const { data: referrals } = await supabase
+      .from('referrals')
+      .select('id, rewarded, created_at')
+      .eq('referrer_id', user.id);
+
+    const successfulReferrals = (referrals || []).filter(r => r.rewarded).length;
+    const bonusSearches = successfulReferrals * REFERRAL_BONUS;
+
+    res.json({
+      referralCode,
+      referralLink: `https://findmyspecialist.vercel.app?ref=${referralCode}`,
+      totalReferrals: (referrals || []).length,
+      successfulReferrals,
+      bonusSearches,
+    });
+  } catch (error) {
+    console.error('Referral info error:', error);
+    res.status(500).json({ error: 'Failed to fetch referral info' });
+  }
+});
+
+app.post('/api/referral/claim', async (req, res) => {
+  try {
+    const user = await getAuthenticatedUser(req.headers.authorization);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { referralCode } = req.body;
+    if (!referralCode) return res.status(400).json({ error: 'No referral code provided' });
+
+    // Find the referrer by their code (first 8 chars of UUID without dashes)
+    const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
+    const referrer = (allUsers?.users || []).find(
+      u => generateReferralCode(u.id) === referralCode
+    );
+
+    if (!referrer) return res.status(400).json({ error: 'Invalid referral code' });
+    if (referrer.id === user.id) return res.status(400).json({ error: 'Cannot refer yourself' });
+
+    // Check if this user was already referred
+    const { data: existing } = await supabase
+      .from('referrals')
+      .select('id')
+      .eq('referred_user_id', user.id)
+      .single();
+
+    if (existing) return res.status(400).json({ error: 'Already referred' });
+
+    // Insert referral record
+    const { error: insertErr } = await supabase
+      .from('referrals')
+      .insert({ referrer_id: referrer.id, referred_user_id: user.id, rewarded: true });
+
+    if (insertErr) throw insertErr;
+
+    // Add bonus searches to referrer
+    const currentBonus = await getBonusSearches(referrer.id);
+    await supabase
+      .from('bonus_searches')
+      .upsert({ user_id: referrer.id, bonus_count: currentBonus + REFERRAL_BONUS, updated_at: new Date().toISOString() });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Referral claim error:', error);
+    res.status(500).json({ error: 'Failed to process referral' });
+  }
+});
+
+app.get('/api/referral/validate/:code', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
+    const referrer = (allUsers?.users || []).find(
+      u => generateReferralCode(u.id) === code
+    );
+    res.json({ valid: !!referrer });
+  } catch {
+    res.json({ valid: false });
+  }
+});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

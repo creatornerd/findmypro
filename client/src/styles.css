@@ -1729,3 +1729,35 @@ body::after {
   .about-main   { padding: 40px 20px 60px; gap: 48px; }
   .about-bio-card { flex-direction: column; }
 }
+
+/* ─── Referral panel ─────────────────────────────────── */
+
+.referral-modal {
+  max-width: 420px;
+}
+.referral-link-box {
+  margin: 16px 0;
+  width: 100%;
+}
+.referral-stats {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  margin-top: 16px;
+}
+.referral-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.referral-stat-num {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent-deep);
+}
+.referral-stat-label {
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+}

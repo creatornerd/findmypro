@@ -11,7 +11,9 @@ const API_URL       = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
 const STORAGE_KEY   = 'findmypro_session';
 const SESSIONS_KEY  = 'findmypro_sessions';
 const USAGE_KEY     = 'findmypro_usage';
+const REFERRAL_KEY  = 'findmypro_referral';
 const WEEKLY_LIMIT  = 5;
+const AUTH_WEEKLY_LIMIT = 15;
 
 const SUGGESTIONS = [
   { kind: 'Legal',     text: "I got into a car accident in Chicago and my back hurts" },
@@ -641,7 +643,7 @@ function GateModal({ onClose, onShowAuth }) {
         <CompassIcon size={34} />
         <h2 className="gate-title">You've used your {WEEKLY_LIMIT} free searches this week</h2>
         <p className="gate-text">
-          Create a free account for unlimited searches and to save your conversation history across devices.
+          Create a free account for {AUTH_WEEKLY_LIMIT} searches per week (plus bonus searches from referrals) and save your conversation history across devices.
         </p>
         <div className="gate-actions">
           <button className="cta-btn" onClick={() => { onClose(); onShowAuth('signup'); }}>
@@ -657,9 +659,81 @@ function GateModal({ onClose, onShowAuth }) {
   );
 }
 
+/* ─── Referral Panel ────────────────────────────────────── */
+
+function ReferralPanel({ session, onClose }) {
+  const [info, setInfo] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!session) return;
+    fetch(`${API_URL}/referral/info`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(r => r.json())
+      .then(data => { setInfo(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [session]);
+
+  const copyLink = () => {
+    if (!info?.referralLink) return;
+    navigator.clipboard.writeText(info.referralLink).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  if (loading) return (
+    <div className="gate-overlay" onClick={onClose}>
+      <div className="gate-modal" onClick={e => e.stopPropagation()}>
+        <p>Loading...</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="gate-overlay" onClick={onClose}>
+      <div className="gate-modal referral-modal" onClick={e => e.stopPropagation()}>
+        <CompassIcon size={34} />
+        <h2 className="gate-title">Refer a Friend</h2>
+        <p className="gate-text">
+          Share your link — when someone signs up, you get <strong>+10 bonus searches/week</strong>.
+        </p>
+
+        <div className="referral-link-box">
+          <input
+            type="text"
+            readOnly
+            value={info?.referralLink || ''}
+            className="auth-input"
+            style={{ fontSize: '0.82rem', marginBottom: 0 }}
+          />
+          <button className="cta-btn" onClick={copyLink} style={{ marginTop: 8, width: '100%', justifyContent: 'center' }}>
+            {copied ? 'Copied!' : 'Copy referral link'}
+          </button>
+        </div>
+
+        <div className="referral-stats">
+          <div className="referral-stat">
+            <span className="referral-stat-num">{info?.successfulReferrals || 0}</span>
+            <span className="referral-stat-label">Successful referrals</span>
+          </div>
+          <div className="referral-stat">
+            <span className="referral-stat-num">+{info?.bonusSearches || 0}</span>
+            <span className="referral-stat-label">Bonus searches/week</span>
+          </div>
+        </div>
+
+        <button className="ghost-btn" onClick={onClose} style={{ marginTop: 12 }}>Close</button>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Auth controls ──────────────────────────────────── */
 
-function AuthControls({ session, onShowAuth, onSignOut }) {
+function AuthControls({ session, onShowAuth, onSignOut, onShowReferral }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const name = userName(session);
@@ -686,6 +760,9 @@ function AuthControls({ session, onShowAuth, onSignOut }) {
         {menuOpen && (
           <div className="avatar-menu">
             <span className="avatar-menu-email">{session.user.email}</span>
+            <button className="avatar-menu-item" onClick={() => { setMenuOpen(false); onShowReferral(); }}>
+              Refer a Friend
+            </button>
             <button className="avatar-menu-item" onClick={() => { setMenuOpen(false); onSignOut(); }}>
               Sign out
             </button>
@@ -723,6 +800,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen]     = useState(false);
   const [gateOpen, setGateOpen]           = useState(false);
   const [authModal, setAuthModal]         = useState(null); // null | 'signin' | 'signup'
+  const [referralOpen, setReferralOpen]   = useState(false);
   const [darkMode, setDarkMode]           = useState(() => {
     const saved = localStorage.getItem('findmypro_theme');
     if (saved) return saved === 'dark';
@@ -734,12 +812,38 @@ function App() {
   const resultsRef     = useRef(null);
   const prevResultsRef = useRef(null);
 
+  // Capture referral code from URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref) {
+      localStorage.setItem(REFERRAL_KEY, ref);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
   // Supabase auth state
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSupaSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setSupaSession(session);
-      if (session) setAuthModal(null); // close modal on successful sign-in
+      if (session) {
+        setAuthModal(null);
+        // Claim referral if one exists in localStorage
+        const storedRef = localStorage.getItem(REFERRAL_KEY);
+        if (storedRef) {
+          fetch(`${API_URL}/referral/claim`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ referralCode: storedRef }),
+          }).finally(() => {
+            localStorage.removeItem(REFERRAL_KEY);
+          });
+        }
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -1027,6 +1131,7 @@ function App() {
             <AuthControls
               session={supaSession}
               onShowAuth={setAuthModal}
+              onShowReferral={() => setReferralOpen(true)}
               onSignOut={async () => {
                 await supabase.auth.signOut();
                 setSupaSession(null);
@@ -1134,6 +1239,7 @@ function App() {
 
       {authModal && <AuthModal initialTab={authModal} onClose={() => setAuthModal(null)} />}
       {gateOpen  && <GateModal onClose={() => setGateOpen(false)} onShowAuth={setAuthModal} />}
+      {referralOpen && <ReferralPanel session={supaSession} onClose={() => setReferralOpen(false)} />}
       {toast     && <div className="toast">{toast}</div>}
     </>
   );
