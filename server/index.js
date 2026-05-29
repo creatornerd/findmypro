@@ -24,17 +24,27 @@ async function upstash(path, method = 'POST') {
 }
 
 async function checkRateLimit(ip) {
-  const key = `fmp:rl:${ip}`;
-  const { result: count } = await upstash(`/incr/${key}`);
-  if (count === 1) await upstash(`/expire/${key}/604800`);
-  return count <= GUEST_WEEKLY_LIMIT;
+  try {
+    const key = `fmp:rl:${ip}`;
+    const { result: count } = await upstash(`/incr/${key}`);
+    if (count === 1) await upstash(`/expire/${key}/604800`);
+    return count <= GUEST_WEEKLY_LIMIT;
+  } catch (err) {
+    console.warn('Upstash rate-limit check failed, allowing request:', err.message);
+    return true;
+  }
 }
 
 async function checkAuthRateLimit(userId, bonusSearches = 0) {
-  const key = `fmp:rl:user:${userId}`;
-  const { result: count } = await upstash(`/incr/${key}`);
-  if (count === 1) await upstash(`/expire/${key}/604800`);
-  return count <= AUTH_WEEKLY_LIMIT + bonusSearches;
+  try {
+    const key = `fmp:rl:user:${userId}`;
+    const { result: count } = await upstash(`/incr/${key}`);
+    if (count === 1) await upstash(`/expire/${key}/604800`);
+    return count <= AUTH_WEEKLY_LIMIT + bonusSearches;
+  } catch (err) {
+    console.warn('Upstash auth rate-limit check failed, allowing request:', err.message);
+    return true;
+  }
 }
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
@@ -246,42 +256,52 @@ function buildWhy(reason, item) {
   return reason;
 }
 
-async function searchWithSerper(query) {
-  // Use /places endpoint for rich structured data (ratings, phone, address)
-  const placesRes = await fetch('https://google.serper.dev/places', {
+async function serperFetch(url, body) {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'X-API-KEY': process.env.SERPER_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: query, gl: 'us' }),
+    body: JSON.stringify(body),
   });
-  const placesData = await placesRes.json();
-  const places = (placesData.places || []).slice(0, 5);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Serper ${url} returned ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
 
-  if (places.length > 0) {
-    return places.map(p => ({
-      name: p.title || p.name || '',
-      rating: p.rating || null,
-      reviews: p.ratingCount || p.reviews || null,
-      address: p.address || '',
-      phone: p.phoneNumber || p.phone || '',
-      website: p.website || '',
-    }));
+async function searchWithSerper(query) {
+  try {
+    const placesData = await serperFetch('https://google.serper.dev/places', { q: query, gl: 'us' });
+    const places = (placesData.places || []).slice(0, 5);
+
+    if (places.length > 0) {
+      return places.map(p => ({
+        name: p.title || p.name || '',
+        rating: p.rating || null,
+        reviews: p.ratingCount || p.reviews || null,
+        address: p.address || '',
+        phone: p.phoneNumber || p.phone || '',
+        website: p.website || '',
+      }));
+    }
+  } catch (err) {
+    console.warn(`Serper /places failed for "${query}":`, err.message);
   }
 
-  // Fall back to organic results if no places found
-  const searchRes = await fetch('https://google.serper.dev/search', {
-    method: 'POST',
-    headers: { 'X-API-KEY': process.env.SERPER_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: query, num: 5 }),
-  });
-  const searchData = await searchRes.json();
-  return (searchData.organic || []).slice(0, 5).map(item => ({
-    name: item.title,
-    rating: null,
-    reviews: null,
-    address: item.snippet || '',
-    phone: '',
-    website: item.link || '',
-  }));
+  try {
+    const searchData = await serperFetch('https://google.serper.dev/search', { q: query, num: 5 });
+    return (searchData.organic || []).slice(0, 5).map(item => ({
+      name: item.title,
+      rating: null,
+      reviews: null,
+      address: item.snippet || '',
+      phone: '',
+      website: item.link || '',
+    }));
+  } catch (err) {
+    console.warn(`Serper /search fallback failed for "${query}":`, err.message);
+    return [];
+  }
 }
 
 // Gemini search with Google grounding — requires billing enabled on GCP project
@@ -327,7 +347,7 @@ app.post('/api/search', async (req, res) => {
 
     const { queries } = req.body;
 
-    const results = await Promise.all(
+    const settled = await Promise.allSettled(
       queries.map(async ({ query, label, reason }) => {
         let items = [];
         if (process.env.USE_GEMINI === 'true') {
@@ -344,6 +364,12 @@ app.post('/api/search', async (req, res) => {
         return { label, results: items };
       })
     );
+
+    const results = settled.map((r, i) => {
+      if (r.status === 'fulfilled') return r.value;
+      console.warn(`Search query "${queries[i].query}" failed:`, r.reason?.message);
+      return { label: queries[i].label, results: [] };
+    });
 
     res.json({ results });
   } catch (error) {

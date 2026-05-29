@@ -1052,7 +1052,8 @@ function App() {
       } else {
         setStage('asking');
       }
-    } catch {
+    } catch (err) {
+      console.error('send() failed:', err);
       setMessages(m => [...m, { role: 'assistant', content: "Sorry, I'm having trouble connecting right now. Please try again in a moment." }]);
       setLoading(false);
       setSearching(false);
