@@ -71,6 +71,18 @@ async function getBonusSearches(userId) {
 
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+async function geminiWithRetry(fn, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isRateLimit = err.status === 429 || err.message?.includes('429') || err.message?.includes('quota');
+      if (!isRateLimit || i === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, (2 ** i) * 1000));
+    }
+  }
+}
+
 const SYSTEM_PROMPT = `You are FindMyPro's AI assistant — a calm, helpful guide that connects people with the right professional. You are NOT a lawyer, doctor, or financial advisor. You help people FIND the right one.
 
 YOUR GOAL:
@@ -203,7 +215,7 @@ app.post('/api/chat', async (req, res) => {
 
     const chat = model.startChat({ history });
     const lastMessage = messages[messages.length - 1].content;
-    const result = await chat.sendMessage(lastMessage);
+    const result = await geminiWithRetry(() => chat.sendMessage(lastMessage));
     const text = result.response.text().trim();
 
     let parsed;
@@ -280,7 +292,7 @@ async function searchWithGemini(query) {
   });
 
   const prompt = `Find the top 5 "${query}" results. Return ONLY a JSON array where each object has: name, rating (number or null), reviews (number or null), address, phone, website. No markdown, no code fences.`;
-  const result = await model.generateContent(prompt);
+  const result = await geminiWithRetry(() => model.generateContent(prompt));
   const text = result.response.text().trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   const match = text.match(/\[[\s\S]*\]/);
   if (!match) return [];
