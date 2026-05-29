@@ -25,12 +25,37 @@ const SUGGESTIONS = [
   { kind: 'Financial', text: "The IRS is auditing me and I live in Denver" },
 ];
 
-const REFINEMENTS = [
-  "Show me someone closer to downtown",
-  "I'd prefer a female specialist",
-  "Who has the best reviews?",
-  "What questions should I ask them?",
-];
+function getRefinements(results) {
+  const label = (results?.[0]?.label || '').toLowerCase();
+  const isLaw = /lawyer|attorney|law|legal|injury|defense|malpractice|bankruptcy|immigration|custody|divorce|eviction|probate|employment/.test(label);
+  const isMedical = /doctor|surgeon|cardiolog|oncolog|neurolog|orthopedic|dermatolog|psychiatr|specialist|endocrin|gastro|ophthalmolog|rheumatolog|pulmonolog|nephrolog|ent|urolog|pediatric/.test(label);
+  const isFinance = /financial|wealth|advisor|cpa|tax|mortgage|retirement|banker|planner|accountant|broker|credit|debt/.test(label);
+
+  if (isLaw) return [
+    "Show me a firm with free consultations",
+    "I need someone who works on contingency",
+    "Show me someone with more case experience",
+    "What should I bring to the first meeting?",
+  ];
+  if (isMedical) return [
+    "Show me someone who takes insurance",
+    "I'd prefer a female doctor",
+    "Who has the most experience with my condition?",
+    "Show me someone closer to my area",
+  ];
+  if (isFinance) return [
+    "I need a fee-only advisor",
+    "Show me someone who specializes in retirement",
+    "Who works with clients at my income level?",
+    "What should I ask in the first meeting?",
+  ];
+  return [
+    "Show me someone closer to downtown",
+    "I'd prefer a female specialist",
+    "Who has the best reviews?",
+    "What questions should I ask them?",
+  ];
+}
 
 /* ─── Usage helpers ─────────────────────────────────── */
 
@@ -1083,10 +1108,12 @@ function App() {
   const empty = messages.length === 0 && !results;
   const hasPastSessions = sessions.some(s => s.id !== sessionIdRef.current);
 
+  const refinements = getRefinements(results);
+
   const placeholderText = empty
     ? "Describe what you need help with…"
     : stage === 'found'
-    ? "Refine your search — e.g. 'show me someone closer' or 'I need a female doctor'…"
+    ? `Refine your search — e.g. '${refinements[0]}' or '${refinements[1]}'…`
     : "Add more detail, or share your city…";
 
   return (
@@ -1193,7 +1220,7 @@ function App() {
                     <div className="refine-section">
                       <div className="refine-label">Refine your search</div>
                       <div className="refine-chips">
-                        {REFINEMENTS.map((r, i) => <button key={i} className="refine-chip" onClick={() => send(r)}>{r}</button>)}
+                        {refinements.map((r, i) => <button key={i} className="refine-chip" onClick={() => send(r)}>{r}</button>)}
                       </div>
                     </div>
                   )}
