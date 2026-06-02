@@ -71,14 +71,19 @@ async function getBonusSearches(userId) {
 }
 
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash'];
 
 async function geminiWithRetry(fn, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
       return await fn();
     } catch (err) {
-      const isRateLimit = err.status === 429 || err.message?.includes('429') || err.message?.includes('quota');
-      if (!isRateLimit || i === retries - 1) throw err;
+      const isRetryable = err.status === 429 || err.status === 503
+        || err.message?.includes('429') || err.message?.includes('503')
+        || err.message?.includes('quota') || err.message?.includes('high demand')
+        || err.message?.includes('overloaded');
+      if (!isRetryable || i === retries - 1) throw err;
+      console.warn(`Gemini transient error (attempt ${i + 1}/${retries}): ${err.status} ${err.message?.slice(0, 80)}`);
       await new Promise(r => setTimeout(r, (2 ** i) * 1000));
     }
   }
@@ -189,11 +194,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { messages } = req.body;
 
-    const model = gemini.getGenerativeModel({
-      model: 'gemini-flash-latest',
-      systemInstruction: SYSTEM_PROMPT,
-    });
-
+    // Gemini uses 'model' role instead of 'assistant'
     const history = messages.slice(0, -1).map(m => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
@@ -210,10 +211,25 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    const chat = model.startChat({ history });
     const lastMessage = messages[messages.length - 1].content;
-    const result = await geminiWithRetry(() => chat.sendMessage(lastMessage));
-    const text = result.response.text().trim();
+    let text;
+
+    // Try each model in order — if one is overloaded/down, fall back to the next
+    for (let m = 0; m < GEMINI_MODELS.length; m++) {
+      try {
+        const model = gemini.getGenerativeModel({
+          model: GEMINI_MODELS[m],
+          systemInstruction: SYSTEM_PROMPT,
+        });
+        const chat = model.startChat({ history });
+        const result = await geminiWithRetry(() => chat.sendMessage(lastMessage));
+        text = result.response.text().trim();
+        break;
+      } catch (err) {
+        console.warn(`Model ${GEMINI_MODELS[m]} failed: ${err.status} ${err.message?.slice(0, 100)}`);
+        if (m === GEMINI_MODELS.length - 1) throw err;
+      }
+    }
 
     let parsed;
     try {
@@ -230,7 +246,7 @@ app.post('/api/chat', async (req, res) => {
 
     res.json(parsed);
   } catch (error) {
-    console.error('Chat error:', error);
+    console.error('Chat error:', error.status, error.message);
     res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 });

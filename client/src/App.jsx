@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Link } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 
@@ -124,11 +124,13 @@ async function syncSessionToSupabase(session, userId) {
   }
 }
 
-async function loadSessionsFromSupabase() {
+async function loadSessionsFromSupabase(userId) {
+  if (!userId) return [];
   try {
     const { data, error } = await supabase
       .from('chat_sessions')
       .select('*')
+      .eq('user_id', userId)
       .order('ts', { ascending: false })
       .limit(30);
     if (error) throw error;
@@ -146,9 +148,10 @@ async function loadSessionsFromSupabase() {
   }
 }
 
-async function deleteAllSupbaseSessions() {
+async function deleteAllSupbaseSessions(userId) {
+  if (!userId) return;
   try {
-    await supabase.from('chat_sessions').delete().neq('id', '');
+    await supabase.from('chat_sessions').delete().eq('user_id', userId);
   } catch (err) {
     console.warn('Session delete failed:', err);
   }
@@ -364,7 +367,7 @@ function Progress({ stage }) {
   );
 }
 
-function ResultCard({ r, n, label }) {
+const ResultCard = memo(function ResultCard({ r, n, label }) {
   const verifyLink = getVerifyLink(label, r.name, r.address);
   return (
     <article className="card">
@@ -410,7 +413,7 @@ function ResultCard({ r, n, label }) {
       </div>
     </article>
   );
-}
+});
 
 function HowItWorks() {
   const steps = [
@@ -494,7 +497,7 @@ function Welcome({ onPick, onFocusInput }) {
 
 /* ─── Sidebar ────────────────────────────────────────── */
 
-function Sidebar({ sessions, activeId, onSelect, onNew, onClearAll, open, onClose }) {
+const Sidebar = memo(function Sidebar({ sessions, activeId, onSelect, onNew, onClearAll, open, onClose }) {
   return (
     <>
       {open && <div className="sidebar-overlay" onClick={onClose} />}
@@ -539,7 +542,7 @@ function Sidebar({ sessions, activeId, onSelect, onNew, onClearAll, open, onClos
       </aside>
     </>
   );
-}
+});
 
 /* ─── Auth modal ─────────────────────────────────────── */
 
@@ -880,8 +883,8 @@ function App() {
 
   // When user logs in, load their cloud sessions and merge with local
   useEffect(() => {
-    if (!supaSession) return;
-    loadSessionsFromSupabase().then(cloud => {
+    if (!supaSession?.user?.id) return;
+    loadSessionsFromSupabase(supaSession.user.id).then(cloud => {
       setSessions(prev => {
         const merged = [...cloud];
         for (const local of prev) {
@@ -904,6 +907,11 @@ function App() {
       if (saved) {
         const s = JSON.parse(saved);
         if (s.messages?.length) {
+          // Re-bind to the saved session id/title so continuing this
+          // conversation updates the existing history entry instead of
+          // creating a duplicate under a fresh random id.
+          if (s.id) { sessionIdRef.current = s.id; setActiveId(s.id); }
+          if (s.title) customTitleRef.current = s.title;
           setMessages(s.messages);
           setResults(s.results || null);
           setStage(s.results ? 'found' : 'asking');
@@ -924,7 +932,7 @@ function App() {
     else               { next = [session, ...sessionsRef.current]; }
     setSessions(next);
     persistSessions(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ messages, results }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ id, title, messages, results }));
 
     // Sync to Supabase for logged-in users (debounced 2s to avoid hammering)
     if (supaSession?.user?.id) {
@@ -950,6 +958,26 @@ function App() {
   const showToast = useCallback((text) => {
     setToast(text);
     setTimeout(() => setToast(null), 2200);
+  }, []);
+
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+
+  // Sign out and clear all local session state so the next account
+  // (or guest) on this browser doesn't inherit the previous user's history.
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
+    setSupaSession(null);
+    localStorage.removeItem(SESSIONS_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+    setSessions([]);
+    sessionsRef.current = [];
+    sessionIdRef.current = crypto.randomUUID();
+    customTitleRef.current = null;
+    setActiveId(null);
+    setMessages([]);
+    setResults(null);
+    setStage('listening');
+    setInput('');
   }, []);
 
   const adjustTA = () => {
@@ -987,16 +1015,17 @@ function App() {
     setSearching(false);
     setSidebarOpen(false);
     if (taRef.current) taRef.current.style.height = 'auto';
-    if (supaSession?.user?.id) deleteAllSupbaseSessions();
+    if (supaSession?.user?.id) deleteAllSupbaseSessions(supaSession.user.id);
   }, [supaSession]);
 
   const restoreSession = useCallback((s) => {
     sessionIdRef.current = s.id;
+    customTitleRef.current = s.title || null;
     setActiveId(s.id);
     setMessages(s.messages);
     setResults(s.results || null);
     setStage(s.results ? 'found' : 'asking');
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ messages: s.messages, results: s.results }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: s.id, title: s.title, messages: s.messages, results: s.results }));
   }, []);
 
   const send = async (textArg) => {
@@ -1125,7 +1154,7 @@ function App() {
         onNew={reset}
         onClearAll={clearHistory}
         open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
+        onClose={closeSidebar}
       />
 
       <div className="stage">
@@ -1160,10 +1189,7 @@ function App() {
               session={supaSession}
               onShowAuth={setAuthModal}
               onShowReferral={() => setReferralOpen(true)}
-              onSignOut={async () => {
-                await supabase.auth.signOut();
-                setSupaSession(null);
-              }}
+              onSignOut={signOut}
             />
           </div>
         </header>
