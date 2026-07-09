@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Link } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 
@@ -25,12 +25,37 @@ const SUGGESTIONS = [
   { kind: 'Financial', text: "The IRS is auditing me and I live in Denver" },
 ];
 
-const REFINEMENTS = [
-  "Show me someone closer to downtown",
-  "I'd prefer a female specialist",
-  "Who has the best reviews?",
-  "What questions should I ask them?",
-];
+function getRefinements(results) {
+  const label = (results?.[0]?.label || '').toLowerCase();
+  const isLaw = /lawyer|attorney|law|legal|injury|defense|malpractice|bankruptcy|immigration|custody|divorce|eviction|probate|employment/.test(label);
+  const isMedical = /doctor|surgeon|cardiolog|oncolog|neurolog|orthopedic|dermatolog|psychiatr|specialist|endocrin|gastro|ophthalmolog|rheumatolog|pulmonolog|nephrolog|ent|urolog|pediatric/.test(label);
+  const isFinance = /financial|wealth|advisor|cpa|tax|mortgage|retirement|banker|planner|accountant|broker|credit|debt/.test(label);
+
+  if (isLaw) return [
+    "Show me a firm with free consultations",
+    "I need someone who works on contingency",
+    "Show me someone with more case experience",
+    "What should I bring to the first meeting?",
+  ];
+  if (isMedical) return [
+    "Show me someone who takes insurance",
+    "I'd prefer a female doctor",
+    "Who has the most experience with my condition?",
+    "Show me someone closer to my area",
+  ];
+  if (isFinance) return [
+    "I need a fee-only advisor",
+    "Show me someone who specializes in retirement",
+    "Who works with clients at my income level?",
+    "What should I ask in the first meeting?",
+  ];
+  return [
+    "Show me someone closer to downtown",
+    "I'd prefer a female specialist",
+    "Who has the best reviews?",
+    "What questions should I ask them?",
+  ];
+}
 
 /* ─── Usage helpers ─────────────────────────────────── */
 
@@ -99,11 +124,13 @@ async function syncSessionToSupabase(session, userId) {
   }
 }
 
-async function loadSessionsFromSupabase() {
+async function loadSessionsFromSupabase(userId) {
+  if (!userId) return [];
   try {
     const { data, error } = await supabase
       .from('chat_sessions')
       .select('*')
+      .eq('user_id', userId)
       .order('ts', { ascending: false })
       .limit(30);
     if (error) throw error;
@@ -121,9 +148,10 @@ async function loadSessionsFromSupabase() {
   }
 }
 
-async function deleteAllSupbaseSessions() {
+async function deleteAllSupbaseSessions(userId) {
+  if (!userId) return;
   try {
-    await supabase.from('chat_sessions').delete().neq('id', '');
+    await supabase.from('chat_sessions').delete().eq('user_id', userId);
   } catch (err) {
     console.warn('Session delete failed:', err);
   }
@@ -339,7 +367,7 @@ function Progress({ stage }) {
   );
 }
 
-function ResultCard({ r, n, label }) {
+const ResultCard = memo(function ResultCard({ r, n, label }) {
   const verifyLink = getVerifyLink(label, r.name, r.address);
   return (
     <article className="card">
@@ -385,7 +413,7 @@ function ResultCard({ r, n, label }) {
       </div>
     </article>
   );
-}
+});
 
 function HowItWorks() {
   const steps = [
@@ -469,7 +497,7 @@ function Welcome({ onPick, onFocusInput }) {
 
 /* ─── Sidebar ────────────────────────────────────────── */
 
-function Sidebar({ sessions, activeId, onSelect, onNew, onClearAll, open, onClose }) {
+const Sidebar = memo(function Sidebar({ sessions, activeId, onSelect, onNew, onClearAll, open, onClose }) {
   return (
     <>
       {open && <div className="sidebar-overlay" onClick={onClose} />}
@@ -514,7 +542,7 @@ function Sidebar({ sessions, activeId, onSelect, onNew, onClearAll, open, onClos
       </aside>
     </>
   );
-}
+});
 
 /* ─── Auth modal ─────────────────────────────────────── */
 
@@ -731,9 +759,112 @@ function ReferralPanel({ session, onClose }) {
   );
 }
 
+/* ─── Usage Panel ───────────────────────────────────────── */
+
+function formatReset(seconds) {
+  if (!seconds || seconds <= 0) return null;
+  const days = Math.floor(seconds / 86400);
+  if (days >= 1) return `${days} day${days > 1 ? 's' : ''}`;
+  const hours = Math.floor(seconds / 3600);
+  if (hours >= 1) return `${hours} hour${hours > 1 ? 's' : ''}`;
+  const mins = Math.max(1, Math.floor(seconds / 60));
+  return `${mins} minute${mins > 1 ? 's' : ''}`;
+}
+
+function UsagePanel({ session, onClose, onShowAuth, onShowReferral }) {
+  const [info, setInfo]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(false);
+
+  useEffect(() => {
+    const headers = {};
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+    fetch(`${API_URL}/usage`, { headers })
+      .then(r => { if (!r.ok) throw new Error('usage request failed'); return r.json(); })
+      .then(data => { setInfo(data); setLoading(false); })
+      .catch(() => {
+        // Guests can fall back to the locally tracked count if the API is
+        // unreachable; signed-in usage lives server-side, so show an error.
+        if (!session) {
+          const u = getUsage();
+          setInfo({
+            authenticated: false,
+            used: u.count,
+            limit: WEEKLY_LIMIT,
+            base: WEEKLY_LIMIT,
+            bonus: 0,
+            remaining: Math.max(0, WEEKLY_LIMIT - u.count),
+            resetInSeconds: null,
+          });
+        } else {
+          setError(true);
+        }
+        setLoading(false);
+      });
+  }, [session]);
+
+  const used      = info?.used ?? 0;
+  const limit     = info?.limit ?? 0;
+  const remaining = info?.remaining ?? 0;
+  const pct       = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const resetLabel = formatReset(info?.resetInSeconds);
+  const low       = remaining <= 1;
+
+  return (
+    <div className="gate-overlay" onClick={onClose}>
+      <div className="gate-modal usage-modal" onClick={e => e.stopPropagation()}>
+        <CompassIcon size={34} />
+        <h2 className="gate-title">Your search usage</h2>
+
+        {loading ? (
+          <p className="gate-text">Loading…</p>
+        ) : error ? (
+          <p className="gate-text">Couldn't load your usage right now. Please try again in a moment.</p>
+        ) : (
+          <>
+            <div className="usage-figure">
+              <span className={`usage-remaining ${low ? 'low' : ''}`}>{remaining}</span>
+              <span className="usage-remaining-label">
+                {remaining === 1 ? 'search left this week' : 'searches left this week'}
+              </span>
+            </div>
+
+            <div className="usage-bar" role="img" aria-label={`${used} of ${limit} searches used this week`}>
+              <div className={`usage-bar-fill ${low ? 'low' : ''}`} style={{ width: `${pct}%` }} />
+            </div>
+            <div className="usage-bar-legend">
+              <span>{used} used</span>
+              <span>
+                {limit} total{info.bonus > 0 ? ` · ${info.base} + ${info.bonus} bonus` : ''}
+              </span>
+            </div>
+
+            <p className="usage-reset">
+              {resetLabel
+                ? `Your weekly limit resets in ${resetLabel}.`
+                : 'Your weekly window starts when you run your next search.'}
+            </p>
+
+            {info.authenticated ? (
+              <button className="cta-btn" onClick={() => { onClose(); onShowReferral(); }} style={{ marginTop: 4, width: '100%', justifyContent: 'center' }}>
+                Refer a friend for +10/week →
+              </button>
+            ) : (
+              <button className="cta-btn" onClick={() => { onClose(); onShowAuth('signup'); }} style={{ marginTop: 4, width: '100%', justifyContent: 'center' }}>
+                Create a free account for {AUTH_WEEKLY_LIMIT}/week →
+              </button>
+            )}
+            <button className="ghost-btn" onClick={onClose} style={{ marginTop: 10 }}>Close</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Auth controls ──────────────────────────────────── */
 
-function AuthControls({ session, onShowAuth, onSignOut, onShowReferral }) {
+function AuthControls({ session, onShowAuth, onSignOut, onShowReferral, onShowUsage }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const name = userName(session);
@@ -760,6 +891,9 @@ function AuthControls({ session, onShowAuth, onSignOut, onShowReferral }) {
         {menuOpen && (
           <div className="avatar-menu">
             <span className="avatar-menu-email">{session.user.email}</span>
+            <button className="avatar-menu-item" onClick={() => { setMenuOpen(false); onShowUsage(); }}>
+              Search usage
+            </button>
             <button className="avatar-menu-item" onClick={() => { setMenuOpen(false); onShowReferral(); }}>
               Refer a Friend
             </button>
@@ -801,6 +935,7 @@ function App() {
   const [gateOpen, setGateOpen]           = useState(false);
   const [authModal, setAuthModal]         = useState(null); // null | 'signin' | 'signup'
   const [referralOpen, setReferralOpen]   = useState(false);
+  const [usageOpen, setUsageOpen]         = useState(false);
   const [darkMode, setDarkMode]           = useState(() => {
     const saved = localStorage.getItem('findmypro_theme');
     if (saved) return saved === 'dark';
@@ -855,8 +990,8 @@ function App() {
 
   // When user logs in, load their cloud sessions and merge with local
   useEffect(() => {
-    if (!supaSession) return;
-    loadSessionsFromSupabase().then(cloud => {
+    if (!supaSession?.user?.id) return;
+    loadSessionsFromSupabase(supaSession.user.id).then(cloud => {
       setSessions(prev => {
         const merged = [...cloud];
         for (const local of prev) {
@@ -879,6 +1014,11 @@ function App() {
       if (saved) {
         const s = JSON.parse(saved);
         if (s.messages?.length) {
+          // Re-bind to the saved session id/title so continuing this
+          // conversation updates the existing history entry instead of
+          // creating a duplicate under a fresh random id.
+          if (s.id) { sessionIdRef.current = s.id; setActiveId(s.id); }
+          if (s.title) customTitleRef.current = s.title;
           setMessages(s.messages);
           setResults(s.results || null);
           setStage(s.results ? 'found' : 'asking');
@@ -899,7 +1039,7 @@ function App() {
     else               { next = [session, ...sessionsRef.current]; }
     setSessions(next);
     persistSessions(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ messages, results }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ id, title, messages, results }));
 
     // Sync to Supabase for logged-in users (debounced 2s to avoid hammering)
     if (supaSession?.user?.id) {
@@ -925,6 +1065,26 @@ function App() {
   const showToast = useCallback((text) => {
     setToast(text);
     setTimeout(() => setToast(null), 2200);
+  }, []);
+
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+
+  // Sign out and clear all local session state so the next account
+  // (or guest) on this browser doesn't inherit the previous user's history.
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
+    setSupaSession(null);
+    localStorage.removeItem(SESSIONS_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+    setSessions([]);
+    sessionsRef.current = [];
+    sessionIdRef.current = crypto.randomUUID();
+    customTitleRef.current = null;
+    setActiveId(null);
+    setMessages([]);
+    setResults(null);
+    setStage('listening');
+    setInput('');
   }, []);
 
   const adjustTA = () => {
@@ -962,16 +1122,17 @@ function App() {
     setSearching(false);
     setSidebarOpen(false);
     if (taRef.current) taRef.current.style.height = 'auto';
-    if (supaSession?.user?.id) deleteAllSupbaseSessions();
+    if (supaSession?.user?.id) deleteAllSupbaseSessions(supaSession.user.id);
   }, [supaSession]);
 
   const restoreSession = useCallback((s) => {
     sessionIdRef.current = s.id;
+    customTitleRef.current = s.title || null;
     setActiveId(s.id);
     setMessages(s.messages);
     setResults(s.results || null);
     setStage(s.results ? 'found' : 'asking');
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ messages: s.messages, results: s.results }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: s.id, title: s.title, messages: s.messages, results: s.results }));
   }, []);
 
   const send = async (textArg) => {
@@ -1052,7 +1213,8 @@ function App() {
       } else {
         setStage('asking');
       }
-    } catch {
+    } catch (err) {
+      console.error('send() failed:', err);
       setMessages(m => [...m, { role: 'assistant', content: "Sorry, I'm having trouble connecting right now. Please try again in a moment." }]);
       setLoading(false);
       setSearching(false);
@@ -1082,10 +1244,12 @@ function App() {
   const empty = messages.length === 0 && !results;
   const hasPastSessions = sessions.some(s => s.id !== sessionIdRef.current);
 
+  const refinements = getRefinements(results);
+
   const placeholderText = empty
     ? "Describe what you need help with…"
     : stage === 'found'
-    ? "Refine your search — e.g. 'show me someone closer' or 'I need a female doctor'…"
+    ? `Refine your search — e.g. '${refinements[0]}' or '${refinements[1]}'…`
     : "Add more detail, or share your city…";
 
   return (
@@ -1097,7 +1261,7 @@ function App() {
         onNew={reset}
         onClearAll={clearHistory}
         open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
+        onClose={closeSidebar}
       />
 
       <div className="stage">
@@ -1132,10 +1296,8 @@ function App() {
               session={supaSession}
               onShowAuth={setAuthModal}
               onShowReferral={() => setReferralOpen(true)}
-              onSignOut={async () => {
-                await supabase.auth.signOut();
-                setSupaSession(null);
-              }}
+              onShowUsage={() => setUsageOpen(true)}
+              onSignOut={signOut}
             />
           </div>
         </header>
@@ -1192,7 +1354,7 @@ function App() {
                     <div className="refine-section">
                       <div className="refine-label">Refine your search</div>
                       <div className="refine-chips">
-                        {REFINEMENTS.map((r, i) => <button key={i} className="refine-chip" onClick={() => send(r)}>{r}</button>)}
+                        {refinements.map((r, i) => <button key={i} className="refine-chip" onClick={() => send(r)}>{r}</button>)}
                       </div>
                     </div>
                   )}
@@ -1226,11 +1388,16 @@ function App() {
           </div>
           <div className="composer-foot">
             <span>Press <kbd>↵</kbd> to send · <kbd>⇧↵</kbd> for newline</span>
-            {!supaSession && (
-              <span className="usage-counter">
-                {Math.max(0, WEEKLY_LIMIT - getUsage().count)} free searches left this week
-              </span>
-            )}
+            <button
+              type="button"
+              className="usage-counter"
+              onClick={() => setUsageOpen(true)}
+              aria-label="View your search usage"
+            >
+              {supaSession
+                ? 'View search usage'
+                : `${Math.max(0, WEEKLY_LIMIT - getUsage().count)} free searches left this week`}
+            </button>
           </div>
         </footer>
 
@@ -1240,6 +1407,14 @@ function App() {
       {authModal && <AuthModal initialTab={authModal} onClose={() => setAuthModal(null)} />}
       {gateOpen  && <GateModal onClose={() => setGateOpen(false)} onShowAuth={setAuthModal} />}
       {referralOpen && <ReferralPanel session={supaSession} onClose={() => setReferralOpen(false)} />}
+      {usageOpen && (
+        <UsagePanel
+          session={supaSession}
+          onClose={() => setUsageOpen(false)}
+          onShowAuth={setAuthModal}
+          onShowReferral={() => setReferralOpen(true)}
+        />
+      )}
       {toast     && <div className="toast">{toast}</div>}
     </>
   );

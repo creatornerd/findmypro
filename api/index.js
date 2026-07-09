@@ -23,17 +23,39 @@ async function upstash(path, method = 'POST') {
 }
 
 async function checkRateLimit(ip) {
-  const key = `fmp:rl:${ip}`;
-  const { result: count } = await upstash(`/incr/${key}`);
-  if (count === 1) await upstash(`/expire/${key}/604800`);
-  return count <= GUEST_WEEKLY_LIMIT;
+  try {
+    const key = `fmp:rl:${ip}`;
+    const { result: count } = await upstash(`/incr/${key}`);
+    if (count === 1) await upstash(`/expire/${key}/604800`);
+    return count <= GUEST_WEEKLY_LIMIT;
+  } catch (err) {
+    console.warn('Upstash rate-limit check failed, allowing request:', err.message);
+    return true;
+  }
 }
 
 async function checkAuthRateLimit(userId, bonusSearches = 0) {
-  const key = `fmp:rl:user:${userId}`;
-  const { result: count } = await upstash(`/incr/${key}`);
-  if (count === 1) await upstash(`/expire/${key}/604800`);
-  return count <= AUTH_WEEKLY_LIMIT + bonusSearches;
+  try {
+    const key = `fmp:rl:user:${userId}`;
+    const { result: count } = await upstash(`/incr/${key}`);
+    if (count === 1) await upstash(`/expire/${key}/604800`);
+    return count <= AUTH_WEEKLY_LIMIT + bonusSearches;
+  } catch (err) {
+    console.warn('Upstash auth rate-limit check failed, allowing request:', err.message);
+    return true;
+  }
+}
+
+// Read the current usage count for a key WITHOUT incrementing it.
+async function getUsageCount(key) {
+  const { result } = await upstash(`/get/${key}`);
+  return parseInt(result, 10) || 0;
+}
+
+// Seconds until the weekly window resets (-2 = no key yet, -1 = no expiry).
+async function getUsageTtl(key) {
+  const { result } = await upstash(`/ttl/${key}`);
+  return typeof result === 'number' ? result : -2;
 }
 
 async function getAuthenticatedUser(authHeader) {
@@ -61,6 +83,23 @@ async function getBonusSearches(userId) {
 }
 
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash'];
+
+async function geminiWithRetry(fn, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isRetryable = err.status === 429 || err.status === 503
+        || err.message?.includes('429') || err.message?.includes('503')
+        || err.message?.includes('quota') || err.message?.includes('high demand')
+        || err.message?.includes('overloaded');
+      if (!isRetryable || i === retries - 1) throw err;
+      console.warn(`Gemini transient error (attempt ${i + 1}/${retries}): ${err.status} ${err.message?.slice(0, 80)}`);
+      await new Promise(r => setTimeout(r, (2 ** i) * 1000));
+    }
+  }
+}
 
 const SYSTEM_PROMPT = `You are FindMyPro's AI assistant — a calm, helpful guide that connects people with the right professional. You are NOT a lawyer, doctor, or financial advisor. You help people FIND the right one.
 
@@ -167,11 +206,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { messages } = req.body;
 
-    const model = gemini.getGenerativeModel({
-      model: 'gemini-flash-latest',
-      systemInstruction: SYSTEM_PROMPT,
-    });
-
+    // Gemini uses 'model' role instead of 'assistant'
     const history = messages.slice(0, -1).map(m => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
@@ -188,10 +223,25 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    const chat = model.startChat({ history });
     const lastMessage = messages[messages.length - 1].content;
-    const result = await chat.sendMessage(lastMessage);
-    const text = result.response.text().trim();
+    let text;
+
+    // Try each model in order — if one is overloaded/down, fall back to the next
+    for (let m = 0; m < GEMINI_MODELS.length; m++) {
+      try {
+        const model = gemini.getGenerativeModel({
+          model: GEMINI_MODELS[m],
+          systemInstruction: SYSTEM_PROMPT,
+        });
+        const chat = model.startChat({ history });
+        const result = await geminiWithRetry(() => chat.sendMessage(lastMessage));
+        text = result.response.text().trim();
+        break;
+      } catch (err) {
+        console.warn(`Model ${GEMINI_MODELS[m]} failed: ${err.status} ${err.message?.slice(0, 100)}`);
+        if (m === GEMINI_MODELS.length - 1) throw err;
+      }
+    }
 
     let parsed;
     try {
@@ -208,45 +258,57 @@ app.post('/api/chat', async (req, res) => {
 
     res.json(parsed);
   } catch (error) {
-    console.error('Chat error:', error);
+    console.error('Chat error:', error.status, error.message);
     res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 });
 
-async function searchWithSerper(query) {
-  const placesRes = await fetch('https://google.serper.dev/places', {
+async function serperFetch(url, body) {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'X-API-KEY': process.env.SERPER_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: query, gl: 'us' }),
+    body: JSON.stringify(body),
   });
-  const placesData = await placesRes.json();
-  const places = (placesData.places || []).slice(0, 5);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Serper ${url} returned ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
 
-  if (places.length > 0) {
-    return places.map(p => ({
-      name: p.title || p.name || '',
-      rating: p.rating || null,
-      reviews: p.ratingCount || p.reviews || null,
-      address: p.address || '',
-      phone: p.phoneNumber || p.phone || '',
-      website: p.website || '',
-    }));
+async function searchWithSerper(query) {
+  try {
+    const placesData = await serperFetch('https://google.serper.dev/places', { q: query, gl: 'us' });
+    const places = (placesData.places || []).slice(0, 5);
+
+    if (places.length > 0) {
+      return places.map(p => ({
+        name: p.title || p.name || '',
+        rating: p.rating || null,
+        reviews: p.ratingCount || p.reviews || null,
+        address: p.address || '',
+        phone: p.phoneNumber || p.phone || '',
+        website: p.website || '',
+      }));
+    }
+  } catch (err) {
+    console.warn(`Serper /places failed for "${query}":`, err.message);
   }
 
-  const searchRes = await fetch('https://google.serper.dev/search', {
-    method: 'POST',
-    headers: { 'X-API-KEY': process.env.SERPER_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: query, num: 5 }),
-  });
-  const searchData = await searchRes.json();
-  return (searchData.organic || []).slice(0, 5).map(item => ({
-    name: item.title,
-    rating: null,
-    reviews: null,
-    address: item.snippet || '',
-    phone: '',
-    website: item.link || '',
-  }));
+  try {
+    const searchData = await serperFetch('https://google.serper.dev/search', { q: query, num: 5 });
+    return (searchData.organic || []).slice(0, 5).map(item => ({
+      name: item.title,
+      rating: null,
+      reviews: null,
+      address: item.snippet || '',
+      phone: '',
+      website: item.link || '',
+    }));
+  } catch (err) {
+    console.warn(`Serper /search fallback failed for "${query}":`, err.message);
+    return [];
+  }
 }
 
 app.post('/api/search', async (req, res) => {
@@ -270,17 +332,77 @@ app.post('/api/search', async (req, res) => {
 
     const { queries } = req.body;
 
-    const results = await Promise.all(
+    const settled = await Promise.allSettled(
       queries.map(async ({ query, label }) => {
         const items = await searchWithSerper(query);
         return { label, results: items };
       })
     );
 
+    const results = settled.map((r, i) => {
+      if (r.status === 'fulfilled') return r.value;
+      console.warn(`Search query "${queries[i].query}" failed:`, r.reason?.message);
+      return { label: queries[i].label, results: [] };
+    });
+
     res.json({ results });
   } catch (error) {
     console.error('Search error:', error);
     res.status(500).json({ error: 'Search failed. Please try again.' });
+  }
+});
+
+/* ─── Usage endpoint ───────────────────────────────────── */
+
+// Returns the caller's current weekly search usage without consuming one.
+// Works for both guests (IP-keyed) and authenticated users (user-keyed),
+// mirroring the exact keys the rate limiter uses so the numbers line up.
+app.get('/api/usage', async (req, res) => {
+  try {
+    const user = await getAuthenticatedUser(req.headers.authorization);
+
+    if (!user) {
+      const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+              || req.socket?.remoteAddress
+              || 'unknown';
+      const key = `fmp:rl:${ip}`;
+      let used = 0, ttl = -2;
+      try { used = await getUsageCount(key); ttl = await getUsageTtl(key); }
+      catch (err) { console.warn('Usage lookup failed:', err.message); }
+      const limit = GUEST_WEEKLY_LIMIT;
+      return res.json({
+        authenticated: false,
+        used,
+        limit,
+        base: GUEST_WEEKLY_LIMIT,
+        bonus: 0,
+        remaining: Math.max(0, limit - used),
+        resetInSeconds: ttl > 0 ? ttl : null,
+      });
+    }
+
+    let bonus = 0;
+    try { bonus = await getBonusSearches(user.id); }
+    catch (err) { console.warn('Bonus lookup failed:', err.message); }
+
+    const key = `fmp:rl:user:${user.id}`;
+    let used = 0, ttl = -2;
+    try { used = await getUsageCount(key); ttl = await getUsageTtl(key); }
+    catch (err) { console.warn('Usage lookup failed:', err.message); }
+
+    const limit = AUTH_WEEKLY_LIMIT + bonus;
+    res.json({
+      authenticated: true,
+      used,
+      limit,
+      base: AUTH_WEEKLY_LIMIT,
+      bonus,
+      remaining: Math.max(0, limit - used),
+      resetInSeconds: ttl > 0 ? ttl : null,
+    });
+  } catch (error) {
+    console.error('Usage error:', error);
+    res.status(500).json({ error: 'Failed to fetch usage' });
   }
 });
 
