@@ -759,9 +759,112 @@ function ReferralPanel({ session, onClose }) {
   );
 }
 
+/* ─── Usage Panel ───────────────────────────────────────── */
+
+function formatReset(seconds) {
+  if (!seconds || seconds <= 0) return null;
+  const days = Math.floor(seconds / 86400);
+  if (days >= 1) return `${days} day${days > 1 ? 's' : ''}`;
+  const hours = Math.floor(seconds / 3600);
+  if (hours >= 1) return `${hours} hour${hours > 1 ? 's' : ''}`;
+  const mins = Math.max(1, Math.floor(seconds / 60));
+  return `${mins} minute${mins > 1 ? 's' : ''}`;
+}
+
+function UsagePanel({ session, onClose, onShowAuth, onShowReferral }) {
+  const [info, setInfo]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(false);
+
+  useEffect(() => {
+    const headers = {};
+    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+    fetch(`${API_URL}/usage`, { headers })
+      .then(r => { if (!r.ok) throw new Error('usage request failed'); return r.json(); })
+      .then(data => { setInfo(data); setLoading(false); })
+      .catch(() => {
+        // Guests can fall back to the locally tracked count if the API is
+        // unreachable; signed-in usage lives server-side, so show an error.
+        if (!session) {
+          const u = getUsage();
+          setInfo({
+            authenticated: false,
+            used: u.count,
+            limit: WEEKLY_LIMIT,
+            base: WEEKLY_LIMIT,
+            bonus: 0,
+            remaining: Math.max(0, WEEKLY_LIMIT - u.count),
+            resetInSeconds: null,
+          });
+        } else {
+          setError(true);
+        }
+        setLoading(false);
+      });
+  }, [session]);
+
+  const used      = info?.used ?? 0;
+  const limit     = info?.limit ?? 0;
+  const remaining = info?.remaining ?? 0;
+  const pct       = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const resetLabel = formatReset(info?.resetInSeconds);
+  const low       = remaining <= 1;
+
+  return (
+    <div className="gate-overlay" onClick={onClose}>
+      <div className="gate-modal usage-modal" onClick={e => e.stopPropagation()}>
+        <CompassIcon size={34} />
+        <h2 className="gate-title">Your search usage</h2>
+
+        {loading ? (
+          <p className="gate-text">Loading…</p>
+        ) : error ? (
+          <p className="gate-text">Couldn't load your usage right now. Please try again in a moment.</p>
+        ) : (
+          <>
+            <div className="usage-figure">
+              <span className={`usage-remaining ${low ? 'low' : ''}`}>{remaining}</span>
+              <span className="usage-remaining-label">
+                {remaining === 1 ? 'search left this week' : 'searches left this week'}
+              </span>
+            </div>
+
+            <div className="usage-bar" role="img" aria-label={`${used} of ${limit} searches used this week`}>
+              <div className={`usage-bar-fill ${low ? 'low' : ''}`} style={{ width: `${pct}%` }} />
+            </div>
+            <div className="usage-bar-legend">
+              <span>{used} used</span>
+              <span>
+                {limit} total{info.bonus > 0 ? ` · ${info.base} + ${info.bonus} bonus` : ''}
+              </span>
+            </div>
+
+            <p className="usage-reset">
+              {resetLabel
+                ? `Your weekly limit resets in ${resetLabel}.`
+                : 'Your weekly window starts when you run your next search.'}
+            </p>
+
+            {info.authenticated ? (
+              <button className="cta-btn" onClick={() => { onClose(); onShowReferral(); }} style={{ marginTop: 4, width: '100%', justifyContent: 'center' }}>
+                Refer a friend for +10/week →
+              </button>
+            ) : (
+              <button className="cta-btn" onClick={() => { onClose(); onShowAuth('signup'); }} style={{ marginTop: 4, width: '100%', justifyContent: 'center' }}>
+                Create a free account for {AUTH_WEEKLY_LIMIT}/week →
+              </button>
+            )}
+            <button className="ghost-btn" onClick={onClose} style={{ marginTop: 10 }}>Close</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Auth controls ──────────────────────────────────── */
 
-function AuthControls({ session, onShowAuth, onSignOut, onShowReferral }) {
+function AuthControls({ session, onShowAuth, onSignOut, onShowReferral, onShowUsage }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const name = userName(session);
@@ -788,6 +891,9 @@ function AuthControls({ session, onShowAuth, onSignOut, onShowReferral }) {
         {menuOpen && (
           <div className="avatar-menu">
             <span className="avatar-menu-email">{session.user.email}</span>
+            <button className="avatar-menu-item" onClick={() => { setMenuOpen(false); onShowUsage(); }}>
+              Search usage
+            </button>
             <button className="avatar-menu-item" onClick={() => { setMenuOpen(false); onShowReferral(); }}>
               Refer a Friend
             </button>
@@ -829,6 +935,7 @@ function App() {
   const [gateOpen, setGateOpen]           = useState(false);
   const [authModal, setAuthModal]         = useState(null); // null | 'signin' | 'signup'
   const [referralOpen, setReferralOpen]   = useState(false);
+  const [usageOpen, setUsageOpen]         = useState(false);
   const [darkMode, setDarkMode]           = useState(() => {
     const saved = localStorage.getItem('findmypro_theme');
     if (saved) return saved === 'dark';
@@ -1189,6 +1296,7 @@ function App() {
               session={supaSession}
               onShowAuth={setAuthModal}
               onShowReferral={() => setReferralOpen(true)}
+              onShowUsage={() => setUsageOpen(true)}
               onSignOut={signOut}
             />
           </div>
@@ -1280,11 +1388,16 @@ function App() {
           </div>
           <div className="composer-foot">
             <span>Press <kbd>↵</kbd> to send · <kbd>⇧↵</kbd> for newline</span>
-            {!supaSession && (
-              <span className="usage-counter">
-                {Math.max(0, WEEKLY_LIMIT - getUsage().count)} free searches left this week
-              </span>
-            )}
+            <button
+              type="button"
+              className="usage-counter"
+              onClick={() => setUsageOpen(true)}
+              aria-label="View your search usage"
+            >
+              {supaSession
+                ? 'View search usage'
+                : `${Math.max(0, WEEKLY_LIMIT - getUsage().count)} free searches left this week`}
+            </button>
           </div>
         </footer>
 
@@ -1294,6 +1407,14 @@ function App() {
       {authModal && <AuthModal initialTab={authModal} onClose={() => setAuthModal(null)} />}
       {gateOpen  && <GateModal onClose={() => setGateOpen(false)} onShowAuth={setAuthModal} />}
       {referralOpen && <ReferralPanel session={supaSession} onClose={() => setReferralOpen(false)} />}
+      {usageOpen && (
+        <UsagePanel
+          session={supaSession}
+          onClose={() => setUsageOpen(false)}
+          onShowAuth={setAuthModal}
+          onShowReferral={() => setReferralOpen(true)}
+        />
+      )}
       {toast     && <div className="toast">{toast}</div>}
     </>
   );

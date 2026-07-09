@@ -1282,6 +1282,16 @@ body::after {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-4);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.usage-counter:hover {
+  color: var(--accent-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* ── User avatar button ──────────────────────────────── */
@@ -1760,4 +1770,67 @@ body::after {
   font-size: 0.78rem;
   color: var(--ink-3);
   letter-spacing: 0.02em;
+}
+
+/* ── Usage modal ─────────────────────────────────────── */
+
+.usage-modal {
+  max-width: 420px;
+}
+.usage-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 18px 0 16px;
+}
+.usage-remaining {
+  font-family: var(--font-display);
+  font-size: 3.2rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent-deep);
+}
+.usage-remaining.low {
+  color: oklch(58% 0.17 30);
+}
+.usage-remaining-label {
+  font-size: 0.82rem;
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+}
+.usage-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-2);
+  overflow: hidden;
+}
+.usage-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.usage-bar-fill.low {
+  background: oklch(62% 0.17 30);
+}
+.usage-bar-legend {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-4);
+}
+.usage-reset {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--ink-4);
+  margin: 14px 0 4px;
+  text-align: center;
 }

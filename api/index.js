@@ -46,6 +46,18 @@ async function checkAuthRateLimit(userId, bonusSearches = 0) {
   }
 }
 
+// Read the current usage count for a key WITHOUT incrementing it.
+async function getUsageCount(key) {
+  const { result } = await upstash(`/get/${key}`);
+  return parseInt(result, 10) || 0;
+}
+
+// Seconds until the weekly window resets (-2 = no key yet, -1 = no expiry).
+async function getUsageTtl(key) {
+  const { result } = await upstash(`/ttl/${key}`);
+  return typeof result === 'number' ? result : -2;
+}
+
 async function getAuthenticatedUser(authHeader) {
   if (!authHeader?.startsWith('Bearer ')) return null;
   try {
@@ -337,6 +349,60 @@ app.post('/api/search', async (req, res) => {
   } catch (error) {
     console.error('Search error:', error);
     res.status(500).json({ error: 'Search failed. Please try again.' });
+  }
+});
+
+/* ─── Usage endpoint ───────────────────────────────────── */
+
+// Returns the caller's current weekly search usage without consuming one.
+// Works for both guests (IP-keyed) and authenticated users (user-keyed),
+// mirroring the exact keys the rate limiter uses so the numbers line up.
+app.get('/api/usage', async (req, res) => {
+  try {
+    const user = await getAuthenticatedUser(req.headers.authorization);
+
+    if (!user) {
+      const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+              || req.socket?.remoteAddress
+              || 'unknown';
+      const key = `fmp:rl:${ip}`;
+      let used = 0, ttl = -2;
+      try { used = await getUsageCount(key); ttl = await getUsageTtl(key); }
+      catch (err) { console.warn('Usage lookup failed:', err.message); }
+      const limit = GUEST_WEEKLY_LIMIT;
+      return res.json({
+        authenticated: false,
+        used,
+        limit,
+        base: GUEST_WEEKLY_LIMIT,
+        bonus: 0,
+        remaining: Math.max(0, limit - used),
+        resetInSeconds: ttl > 0 ? ttl : null,
+      });
+    }
+
+    let bonus = 0;
+    try { bonus = await getBonusSearches(user.id); }
+    catch (err) { console.warn('Bonus lookup failed:', err.message); }
+
+    const key = `fmp:rl:user:${user.id}`;
+    let used = 0, ttl = -2;
+    try { used = await getUsageCount(key); ttl = await getUsageTtl(key); }
+    catch (err) { console.warn('Usage lookup failed:', err.message); }
+
+    const limit = AUTH_WEEKLY_LIMIT + bonus;
+    res.json({
+      authenticated: true,
+      used,
+      limit,
+      base: AUTH_WEEKLY_LIMIT,
+      bonus,
+      remaining: Math.max(0, limit - used),
+      resetInSeconds: ttl > 0 ? ttl : null,
+    });
+  } catch (error) {
+    console.error('Usage error:', error);
+    res.status(500).json({ error: 'Failed to fetch usage' });
   }
 });
 
