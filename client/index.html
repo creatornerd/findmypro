@@ -2,27 +2,34 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#faf9f6" />
 
-    <!-- SEO -->
-    <title>FindMyPro — AI-Powered Lawyer, Doctor & Financial Advisor Matchmaker</title>
-    <meta name="description" content="Describe your situation in plain English. FindMyPro uses AI to identify the right lawyer, doctor, or financial advisor — then shows you the highest-rated professionals near you with real Google reviews." />
-    <meta name="keywords" content="find lawyer, find doctor, find financial advisor, professional matchmaker, AI professional finder, best lawyer near me, best doctor near me, top rated professionals" />
+    <!-- SEO — defaults match the landing page at "/" -->
+    <title>FindMyPro — Find the Right Lawyer, Doctor or Financial Advisor Near You</title>
+    <meta name="description" content="Describe your situation in plain English. FindMyPro works out whether you need a lawyer, doctor or financial advisor, then shows the highest-rated verified professionals near you — ranked by real Google reviews, with no paid placements." />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="author" content="Ahaan Hossain" />
+    <link rel="canonical" href="https://findmyspecialist.vercel.app/" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="FindMyPro — Find the Right Lawyer, Doctor, or Advisor" />
-    <meta property="og:description" content="Tell us what's going on in plain words. Our AI identifies the specialist you need and surfaces top-rated professionals near you — with real ratings from Google." />
     <meta property="og:site_name" content="FindMyPro" />
+    <meta property="og:url" content="https://findmyspecialist.vercel.app/" />
+    <meta property="og:title" content="FindMyPro — Find the Right Lawyer, Doctor or Financial Advisor Near You" />
+    <meta property="og:description" content="Tell FindMyPro what's going on in plain words. It works out which specialist you need and surfaces top-rated professionals near you — ranked by real Google reviews." />
+    <meta property="og:image" content="https://findmyspecialist.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="FindMyPro — find the right lawyer, doctor or financial advisor without guessing." />
+    <meta property="og:locale" content="en_US" />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="FindMyPro — AI-Powered Professional Matchmaker" />
-    <meta name="twitter:description" content="Describe your situation. Get matched with the right lawyer, doctor, or financial advisor near you." />
-
-    <!-- Canonical -->
-    <link rel="canonical" href="https://findmyspecialist.vercel.app" />
+    <meta name="twitter:title" content="FindMyPro — Find the Right Lawyer, Doctor or Financial Advisor" />
+    <meta name="twitter:description" content="Describe your situation. Get matched with the right professional near you, ranked by real Google reviews." />
+    <meta name="twitter:image" content="https://findmyspecialist.vercel.app/og-image.png" />
 
     <!-- Fonts: preconnect + preload critical files + display=swap -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -30,9 +37,31 @@
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" />
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
     <noscript><link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" /></noscript>
+
+    <!-- Paint the stored theme before first paint so dark mode never flashes white -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('findmypro_theme');
+          var dark = saved ? saved === 'dark'
+                           : window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) { /* storage blocked — fall back to light */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <p style="max-width:640px;margin:48px auto;padding:0 24px;font-family:Helvetica,Arial,sans-serif;line-height:1.6">
+        <strong>FindMyPro</strong> matches you with the right lawyer, doctor or financial
+        advisor near you. Describe your situation in plain English and it identifies the
+        specialist you need, then surfaces top-rated practitioners ranked by real Google
+        reviews — with a credential verification link on every result.
+        JavaScript is required to run a search.
+      </p>
+    </noscript>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

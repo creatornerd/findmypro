@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
+import { CompassIcon, SunIcon, MoonIcon } from './icons.jsx';
+import { useTheme } from './theme.js';
+import { useSeo } from './seo.js';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -10,10 +13,11 @@ const supabase = createClient(
 const API_URL       = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api';
 const STORAGE_KEY   = 'findmypro_session';
 const SESSIONS_KEY  = 'findmypro_sessions';
-const USAGE_KEY     = 'findmypro_usage';
+const USAGE_KEY     = 'findmypro_usage_v2';
 const REFERRAL_KEY  = 'findmypro_referral';
-const WEEKLY_LIMIT  = 5;
+const GUEST_LIMIT   = 1;   // one free search, then the sign-up wall
 const AUTH_WEEKLY_LIMIT = 15;
+const REFERRAL_BONUS = 10; // keep in step with api/index.js
 
 const SUGGESTIONS = [
   { kind: 'Legal',     text: "I got into a car accident in Chicago and my back hurts" },
@@ -70,6 +74,18 @@ function generateChatTitle(searches) {
   const cityMatch = query.match(/\bin\s+([A-Za-z][a-zA-Z\s]+?)(?:\s*$)/i);
   const city = cityMatch ? cityMatch[1].trim() : null;
   return city ? `${label} · ${city}` : label;
+}
+
+function loadLastSession() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return null;
+    const s = JSON.parse(saved);
+    if (!s?.messages?.length) return null;
+    return { messages: s.messages, results: s.results || null };
+  } catch {
+    return null;
+  }
 }
 
 function loadSessions() {
@@ -153,27 +169,6 @@ function userName(session) {
 
 /* ─── Icons ─────────────────────────────────────────── */
 
-function CompassIcon({ size = 40 }) {
-  return (
-    <svg className="compass" width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
-      <circle cx="20" cy="20" r="19" fill="var(--paper)" stroke="var(--ink)" strokeWidth="1.25"/>
-      <circle cx="20" cy="20" r="15.5" stroke="var(--ink-4)" strokeWidth="0.6" strokeDasharray="1 3"/>
-      <g stroke="var(--ink-3)" strokeWidth="0.8" strokeLinecap="round">
-        <line x1="20" y1="3"  x2="20" y2="6"/>
-        <line x1="20" y1="34" x2="20" y2="37"/>
-        <line x1="3"  y1="20" x2="6"  y2="20"/>
-        <line x1="34" y1="20" x2="37" y2="20"/>
-      </g>
-      <polygon points="20,7 22.6,20 20,16.5" fill="var(--accent-deep)"/>
-      <polygon points="20,7 17.4,20 20,16.5" fill="var(--accent)"/>
-      <polygon points="20,33 22.6,20 20,23.5" fill="var(--ink-2)"/>
-      <polygon points="20,33 17.4,20 20,23.5" fill="var(--ink)"/>
-      <circle cx="20" cy="20" r="2.6" fill="var(--paper)" stroke="var(--ink)" strokeWidth="0.8"/>
-      <circle cx="20" cy="20" r="1"   fill="var(--accent-deep)"/>
-    </svg>
-  );
-}
-
 function GoogleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -187,10 +182,10 @@ function GoogleIcon() {
 
 function Mark() {
   return (
-    <span className="brand">
+    <Link to="/" className="brand" aria-label="FindMyPro home">
       <CompassIcon />
       <span className="brand-text">Find<em>My</em>Pro</span>
-    </span>
+    </Link>
   );
 }
 
@@ -220,30 +215,6 @@ function ShareIcon() {
       <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
       <polyline points="16 6 12 2 8 6"/>
       <line x1="12" y1="2" x2="12" y2="15"/>
-    </svg>
-  );
-}
-
-function SunIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="5"/>
-      <line x1="12" y1="1" x2="12" y2="3"/>
-      <line x1="12" y1="21" x2="12" y2="23"/>
-      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-      <line x1="1" y1="12" x2="3" y2="12"/>
-      <line x1="21" y1="12" x2="23" y2="12"/>
-      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
     </svg>
   );
 }
@@ -387,27 +358,6 @@ function ResultCard({ r, n, label }) {
   );
 }
 
-function HowItWorks() {
-  const steps = [
-    { num: '01', title: 'Describe your situation', desc: 'Tell us what happened in plain words — no jargon, no forms.' },
-    { num: '02', title: 'AI identifies the specialist', desc: 'We figure out if you need a lawyer, doctor, advisor, or all three.' },
-    { num: '03', title: 'See verified matches', desc: 'Real ratings from Google, ranked for your city — with direct links to verify credentials via State Bar, FINRA BrokerCheck, or Healthgrades.' },
-  ];
-  return (
-    <div className="how-it-works">
-      {steps.map(s => (
-        <div key={s.num} className="hiw-step">
-          <span className="hiw-num">{s.num}</span>
-          <div>
-            <div className="hiw-title">{s.title}</div>
-            <div className="hiw-desc">{s.desc}</div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function Welcome({ onPick, onFocusInput }) {
   const groups = ['Legal', 'Medical', 'Financial'].map(k => ({
     kind: k,
@@ -415,40 +365,15 @@ function Welcome({ onPick, onFocusInput }) {
   }));
   return (
     <section className="welcome">
-      <div className="eyebrow"><span className="dot"></span>AI-powered · Lawyers, Doctors &amp; Advisors · Real Google ratings</div>
-      <h1 className="headline">Find the right professional<br/><em>without guessing.</em></h1>
+      <div className="eyebrow"><span className="dot"></span>Real Google ratings &middot; No paid placements</div>
+      <h1 className="headline">What&rsquo;s going on?</h1>
       <p className="lede">
-        Describe what's going on in plain words. FindMyPro uses AI to identify
-        the type of specialist you need — then surfaces the highest-rated,
-        verified practitioners near you. No directories. No forms. As a note,
-        FindMyPro currently has the capability to find lawyers, doctors, and
-        financial advisors, and please specify if you are looking for a professional
-        outside of the US.
+        Describe it in plain words — no jargon, no forms. FindMyPro works out which
+        kind of specialist you need and surfaces the highest-rated, verified
+        practitioners near you. Mention your city, and your country if you are outside the US.
       </p>
-      <button className="cta-btn" onClick={onFocusInput}>Describe your situation →</button>
-      <HowItWorks />
-      <div className="trust-bar">
-        <div className="trust-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          <span>We help you find — we don't replace professional advice</span>
-        </div>
-        <div className="trust-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          <span>Ratings sourced from real Google reviews · No paid placements</span>
-        </div>
-        <div className="trust-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <span>Your conversation is never stored or sold</span>
-        </div>
-        <div className="trust-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <span>Always verify credentials before engaging any professional</span>
-        </div>
-        <div className="trust-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          <span>Every result includes a direct credential verification link</span>
-        </div>
-      </div>
+      <button className="cta-btn" onClick={onFocusInput}>Describe your situation &rarr;</button>
+
       <div className="starters">
         <div className="starters-heading">Try an example, or type your own below</div>
         {groups.map(g => (
@@ -456,13 +381,17 @@ function Welcome({ onPick, onFocusInput }) {
             <div className="starter-label">{g.kind}</div>
             {g.items.map((s, i) => (
               <button key={i} className="starter" onClick={() => onPick(s.text)}>
-                <span className="text">"{s.text}"</span>
-                <span className="arr">→</span>
+                <span className="text">&ldquo;{s.text}&rdquo;</span>
+                <span className="arr">&rarr;</span>
               </button>
             ))}
           </div>
         ))}
       </div>
+
+      <p className="welcome-foot">
+        New here? <Link to="/">See how FindMyPro works</Link> — or just start typing below.
+      </p>
     </section>
   );
 }
@@ -636,26 +565,60 @@ function AuthModal({ initialTab, onClose }) {
 
 /* ─── Gate modal ─────────────────────────────────────── */
 
-function GateModal({ onClose, onShowAuth }) {
+function GateModal({ onClose, onShowAuth, variant = 'blocked' }) {
+  const usedItsFreeSearch = variant === 'used';
   return (
-    <div className="gate-overlay" onClick={onClose}>
+    <div className="gate-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="gate-title">
       <div className="gate-modal" onClick={e => e.stopPropagation()}>
+        <button className="gate-close" onClick={onClose} aria-label="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+
         <CompassIcon size={34} />
-        <h2 className="gate-title">You've used your {WEEKLY_LIMIT} free searches this week</h2>
+
+        <h2 className="gate-title" id="gate-title">
+          {usedItsFreeSearch
+            ? 'That was your free search.'
+            : 'You have used your free search.'}
+        </h2>
+
         <p className="gate-text">
-          Create a free account for {AUTH_WEEKLY_LIMIT} searches per week (plus bonus searches from referrals) and save your conversation history across devices.
+          {usedItsFreeSearch
+            ? 'Your results are right behind this. Create a free account to keep searching — it takes about ten seconds.'
+            : 'Guests get one free search. Create a free account to carry on.'}
         </p>
+
+        <ul className="gate-perks">
+          <li><GateCheck /> {AUTH_WEEKLY_LIMIT} searches every week</li>
+          <li><GateCheck /> Conversation history saved across devices</li>
+          <li><GateCheck /> +{REFERRAL_BONUS} bonus searches for every friend you refer</li>
+          <li><GateCheck /> Free forever &mdash; no card required</li>
+        </ul>
+
         <div className="gate-actions">
           <button className="cta-btn" onClick={() => { onClose(); onShowAuth('signup'); }}>
-            Create free account →
+            Sign up free &rarr;
           </button>
           <button className="ghost-btn" onClick={() => { onClose(); onShowAuth('signin'); }}>
-            Sign in to existing account
+            I already have an account
           </button>
         </div>
-        <p className="gate-reset">Guest limit resets every 7 days.</p>
+
+        {usedItsFreeSearch && (
+          <button className="gate-dismiss" onClick={onClose}>Not now — show me my results</button>
+        )}
       </div>
     </div>
+  );
+}
+
+function GateCheck() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 6L9 17l-5-5"/>
+    </svg>
   );
 }
 
@@ -782,35 +745,50 @@ function AuthControls({ session, onShowAuth, onSignOut, onShowReferral }) {
 /* ─── Main App ───────────────────────────────────────── */
 
 function App() {
-  const sessionIdRef    = useRef(crypto.randomUUID());
+  const [sessionId, setSessionId]         = useState(() => crypto.randomUUID());
+
+  const sessionIdRef    = useRef(sessionId);
   const sessionsRef     = useRef(loadSessions());
   const customTitleRef  = useRef(null);
   const syncTimerRef    = useRef(null);
 
+  // Last in-progress conversation, read from localStorage exactly once.
+  const [restored]                        = useState(loadLastSession);
   const [supaSession, setSupaSession]     = useState(null);
   const [sessions, setSessions]           = useState(() => loadSessions());
   const [activeId, setActiveId]           = useState(null);
-  const [messages, setMessages]           = useState([]);
+  const [messages, setMessages]           = useState(() => restored?.messages ?? []);
   const [input, setInput]                 = useState('');
   const [loading, setLoading]             = useState(false);
   const [searching, setSearching]         = useState(false);
-  const [results, setResults]             = useState(null);
-  const [stage, setStage]                 = useState('listening');
+  const [results, setResults]             = useState(() => restored?.results ?? null);
+  const [stage, setStage]                 = useState(() =>
+    restored ? (restored.results ? 'found' : 'asking') : 'listening');
   const [toast, setToast]                 = useState(null);
   const [sidebarOpen, setSidebarOpen]     = useState(false);
   const [gateOpen, setGateOpen]           = useState(false);
   const [authModal, setAuthModal]         = useState(null); // null | 'signin' | 'signup'
   const [referralOpen, setReferralOpen]   = useState(false);
-  const [darkMode, setDarkMode]           = useState(() => {
-    const saved = localStorage.getItem('findmypro_theme');
-    if (saved) return saved === 'dark';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const [gateVariant, setGateVariant]     = useState('blocked');
+  const [darkMode, setDarkMode]           = useTheme();
+  const [searchParams, setSearchParams]   = useSearchParams();
+
+  useSeo({
+    path: '/chat',
+    title: 'Search FindMyPro — Describe Your Situation, Get Matched',
+    description:
+      'Tell FindMyPro what is going on in plain English and get matched with top-rated lawyers, doctors and financial advisors near you, ranked by real Google reviews.',
   });
 
   const taRef          = useRef(null);
   const mainRef        = useRef(null);
   const resultsRef     = useRef(null);
   const prevResultsRef = useRef(null);
+  const gateTimerRef   = useRef(null);
+  const handoffRef     = useRef(false);
+  const sendRef        = useRef(null);
+
+  useEffect(() => () => clearTimeout(gateTimerRef.current), []);
 
   // Capture referral code from URL on mount
   useEffect(() => {
@@ -818,7 +796,9 @@ function App() {
     const ref = params.get('ref');
     if (ref) {
       localStorage.setItem(REFERRAL_KEY, ref);
-      window.history.replaceState({}, '', window.location.pathname);
+      params.delete('ref');
+      const rest = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''));
     }
   }, []);
 
@@ -848,11 +828,6 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
-    localStorage.setItem('findmypro_theme', darkMode ? 'dark' : 'light');
-  }, [darkMode]);
-
   // When user logs in, load their cloud sessions and merge with local
   useEffect(() => {
     if (!supaSession) return;
@@ -871,21 +846,6 @@ function App() {
   }, [supaSession?.user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
-
-  // Restore last active session
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const s = JSON.parse(saved);
-        if (s.messages?.length) {
-          setMessages(s.messages);
-          setResults(s.results || null);
-          setStage(s.results ? 'found' : 'asking');
-        }
-      }
-    } catch { /* ignore */ }
-  }, []);
 
   // Auto-save current session (localStorage + debounced Supabase sync)
   useEffect(() => {
@@ -936,6 +896,7 @@ function App() {
 
   const reset = useCallback(() => {
     sessionIdRef.current = crypto.randomUUID();
+    setSessionId(sessionIdRef.current);
     customTitleRef.current = null;
     setActiveId(null);
     setMessages([]);
@@ -954,6 +915,7 @@ function App() {
     localStorage.removeItem(STORAGE_KEY);
     customTitleRef.current = null;
     sessionIdRef.current = crypto.randomUUID();
+    setSessionId(sessionIdRef.current);
     setActiveId(null);
     setMessages([]);
     setResults(null);
@@ -967,6 +929,7 @@ function App() {
 
   const restoreSession = useCallback((s) => {
     sessionIdRef.current = s.id;
+    setSessionId(s.id);
     setActiveId(s.id);
     setMessages(s.messages);
     setResults(s.results || null);
@@ -1005,7 +968,8 @@ function App() {
         // Check weekly limit for guests
         if (!supaSession) {
           const usage = getUsage();
-          if (usage.count >= WEEKLY_LIMIT) {
+          if (usage.count >= GUEST_LIMIT) {
+            setGateVariant('blocked');
             setGateOpen(true);
             setStage('asking');
             return;
@@ -1025,6 +989,7 @@ function App() {
         });
 
         if (searchRes.status === 429) {
+          setGateVariant('blocked');
           setGateOpen(true);
           setSearching(false);
           setStage('asking');
@@ -1035,7 +1000,7 @@ function App() {
         const searchData = await searchRes.json();
         const searchResults = searchData.results;
 
-        if (!supaSession) incrementUsage();
+        const guestUsed = !supaSession ? incrementUsage() : 0;
 
         if (!searchResults?.length || searchResults.every(c => !c.results?.length)) {
           setMessages(m => [...m, {
@@ -1048,6 +1013,15 @@ function App() {
           setResults(searchResults);
           setSearching(false);
           setStage('found');
+
+          // One free search is spent — let the results land, then ask them to sign up.
+          if (!supaSession && guestUsed >= GUEST_LIMIT) {
+            clearTimeout(gateTimerRef.current);
+            gateTimerRef.current = setTimeout(() => {
+              setGateVariant('used');
+              setGateOpen(true);
+            }, 1800);
+          }
         }
       } else {
         setStage('asking');
@@ -1059,6 +1033,19 @@ function App() {
       setStage('asking');
     }
   };
+
+  useEffect(() => { sendRef.current = send; });
+
+  useEffect(() => {
+    if (handoffRef.current) return;
+    const q = searchParams.get('q');
+    if (!q) return;
+    handoffRef.current = true;
+    const next = new URLSearchParams(searchParams);
+    next.delete('q');
+    setSearchParams(next, { replace: true });
+    sendRef.current?.(q);
+  }, [searchParams, setSearchParams]);
 
   const copyResults = () => {
     if (!results) return;
@@ -1080,7 +1067,7 @@ function App() {
   };
 
   const empty = messages.length === 0 && !results;
-  const hasPastSessions = sessions.some(s => s.id !== sessionIdRef.current);
+  const hasPastSessions = sessions.some(s => s.id !== sessionId);
 
   const placeholderText = empty
     ? "Describe what you need help with…"
@@ -1111,7 +1098,7 @@ function App() {
             <Mark />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className="tagline">Lawyers · Doctors · Advisors</span>
+            {empty && <span className="tagline">Lawyers · Doctors · Advisors</span>}
             {!empty && (
               <button className="ghost-btn" onClick={reset} aria-label="Start a new search">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: 4 }}>
@@ -1196,6 +1183,20 @@ function App() {
                       </div>
                     </div>
                   )}
+                  {results && !supaSession && (
+                    <aside className="upsell">
+                      <div>
+                        <p className="upsell-title">That was your one free search.</p>
+                        <p className="upsell-text">
+                          A free account gives you {AUTH_WEEKLY_LIMIT} searches a week and keeps your
+                          history across devices. No card needed.
+                        </p>
+                      </div>
+                      <button className="cta-btn upsell-btn" onClick={() => setAuthModal('signup')}>
+                        Sign up free &rarr;
+                      </button>
+                    </aside>
+                  )}
                   {results && (
                     <p className="fineprint">
                       Results ranked by Google rating. Data sourced from Google Places via Serper — no sponsored listings, no paid placements.
@@ -1228,17 +1229,22 @@ function App() {
             <span>Press <kbd>↵</kbd> to send · <kbd>⇧↵</kbd> for newline</span>
             {!supaSession && (
               <span className="usage-counter">
-                {Math.max(0, WEEKLY_LIMIT - getUsage().count)} free searches left this week
+                {Math.max(0, GUEST_LIMIT - getUsage().count) === 1
+                  ? '1 free search left'
+                  : 'Free search used — sign up to continue'}
               </span>
             )}
           </div>
         </footer>
 
-        <div className="site-credit">© {new Date().getFullYear()} Ahaan Hossain. All rights reserved. · <Link to="/about" style={{ color: 'inherit', textDecoration: 'underline' }}>About</Link></div>
+        <div className="site-credit">
+          © {new Date().getFullYear()} Ahaan Hossain. All rights reserved. ·{' '}
+          <Link to="/">Home</Link> · <Link to="/about">About</Link>
+        </div>
       </div>
 
       {authModal && <AuthModal initialTab={authModal} onClose={() => setAuthModal(null)} />}
-      {gateOpen  && <GateModal onClose={() => setGateOpen(false)} onShowAuth={setAuthModal} />}
+      {gateOpen  && <GateModal variant={gateVariant} onClose={() => setGateOpen(false)} onShowAuth={setAuthModal} />}
       {referralOpen && <ReferralPanel session={supaSession} onClose={() => setReferralOpen(false)} />}
       {toast     && <div className="toast">{toast}</div>}
     </>

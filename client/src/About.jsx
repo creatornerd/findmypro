@@ -1,63 +1,15 @@
 import { Link } from 'react-router-dom';
-
-function CompassIcon({ size = 36 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
-      <circle cx="20" cy="20" r="19" fill="var(--paper)" stroke="var(--ink)" strokeWidth="1.25"/>
-      <circle cx="20" cy="20" r="15.5" stroke="var(--ink-4)" strokeWidth="0.6" strokeDasharray="1 3"/>
-      <g stroke="var(--ink-3)" strokeWidth="0.8" strokeLinecap="round">
-        <line x1="20" y1="3"  x2="20" y2="6"/>
-        <line x1="20" y1="34" x2="20" y2="37"/>
-        <line x1="3"  y1="20" x2="6"  y2="20"/>
-        <line x1="34" y1="20" x2="37" y2="20"/>
-      </g>
-      <polygon points="20,7 22.6,20 20,16.5" fill="var(--accent-deep)"/>
-      <polygon points="20,7 17.4,20 20,16.5" fill="var(--accent)"/>
-      <polygon points="20,33 22.6,20 20,23.5" fill="var(--ink-2)"/>
-      <polygon points="20,33 17.4,20 20,23.5" fill="var(--ink)"/>
-      <circle cx="20" cy="20" r="2.6" fill="var(--paper)" stroke="var(--ink)" strokeWidth="0.8"/>
-      <circle cx="20" cy="20" r="1"   fill="var(--accent-deep)"/>
-    </svg>
-  );
-}
+import { CompassIcon, SunIcon, MoonIcon } from './icons.jsx';
+import { useTheme } from './theme.js';
+import { useSeo, SITE_URL } from './seo.js';
 
 const STACK = [
-  {
-    name: 'Gemini AI',
-    by: 'Google',
-    desc: 'Powers the conversational triage — understands your situation and identifies which specialist you need.',
-    href: 'https://deepmind.google/technologies/gemini/',
-  },
-  {
-    name: 'Serper',
-    by: 'Google Search API',
-    desc: 'Pulls real Google Places results — ratings, phone numbers, and addresses for practitioners near you.',
-    href: 'https://serper.dev',
-  },
-  {
-    name: 'Supabase',
-    by: 'Auth & database',
-    desc: 'Handles user accounts and authentication, including Google sign-in.',
-    href: 'https://supabase.com',
-  },
-  {
-    name: 'Upstash Redis',
-    by: 'Rate limiting',
-    desc: 'Tracks free search usage per IP to enforce the weekly guest limit without a database hit.',
-    href: 'https://upstash.com',
-  },
-  {
-    name: 'Vercel',
-    by: 'Hosting & edge',
-    desc: 'Deploys the frontend and serverless API, globally distributed for fast load times.',
-    href: 'https://vercel.com',
-  },
-  {
-    name: 'React + Vite',
-    by: 'Frontend',
-    desc: 'Single-page app with instant hot-module reload during development and a lean production bundle.',
-    href: 'https://vite.dev',
-  },
+  { name: 'Gemini',       by: 'Conversational AI',   href: 'https://deepmind.google/technologies/gemini/' },
+  { name: 'Serper',       by: 'Google Places data',  href: 'https://serper.dev' },
+  { name: 'Supabase',     by: 'Accounts & sign-in',  href: 'https://supabase.com' },
+  { name: 'Upstash',      by: 'Usage limits',        href: 'https://upstash.com' },
+  { name: 'Vercel',       by: 'Hosting',             href: 'https://vercel.com' },
+  { name: 'React + Vite', by: 'Frontend',            href: 'https://vite.dev' },
 ];
 
 const HOW_IT_WORKS = [
@@ -84,22 +36,55 @@ const HOW_IT_WORKS = [
 ];
 
 export default function About() {
+  const [darkMode, setDarkMode] = useTheme();
+
+  useSeo({
+    path: '/about',
+    title: 'About FindMyPro — Who Built It and How It Works',
+    description:
+      'How FindMyPro matches you with the right lawyer, doctor or financial advisor, what it is built on, and who made it.',
+    jsonLd: {
+      '@context': 'https://schema.org',
+      '@type': 'AboutPage',
+      name: 'About FindMyPro',
+      url: `${SITE_URL}/about`,
+      breadcrumb: {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Home',  item: `${SITE_URL}/` },
+          { '@type': 'ListItem', position: 2, name: 'About', item: `${SITE_URL}/about` },
+        ],
+      },
+    },
+  });
+
   return (
     <div className="about-page">
+      <a href="#about-main" className="skip-link">Skip to main content</a>
+
       <header className="about-header">
         <Link to="/" className="about-back">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M19 12H5M12 5l-7 7 7 7"/>
           </svg>
           Back to FindMyPro
         </Link>
-        <div className="about-logo">
-          <CompassIcon size={32} />
-          <span>Find<em>My</em>Pro</span>
+        <div className="about-header-right">
+          <button
+            className="theme-btn"
+            onClick={() => setDarkMode(d => !d)}
+            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {darkMode ? <SunIcon /> : <MoonIcon />}
+          </button>
+          <Link to="/" className="about-logo">
+            <CompassIcon size={32} />
+            <span>Find<em>My</em>Pro</span>
+          </Link>
         </div>
       </header>
 
-      <main className="about-main">
+      <main className="about-main" id="about-main">
 
         {/* Hero */}
         <section className="about-hero">
@@ -131,12 +116,12 @@ export default function About() {
         {/* Tech stack */}
         <section className="about-section">
           <h2 className="about-h2">Built with</h2>
+          <p className="about-section-note">The services doing the heavy lifting behind the scenes.</p>
           <div className="about-stack">
             {STACK.map(s => (
               <a key={s.name} href={s.href} target="_blank" rel="noopener noreferrer" className="about-stack-card">
                 <div className="about-stack-name">{s.name}</div>
                 <div className="about-stack-by">{s.by}</div>
-                <div className="about-stack-desc">{s.desc}</div>
               </a>
             ))}
           </div>
@@ -150,13 +135,14 @@ export default function About() {
             <div>
               <div className="about-bio-name">Ahaan Hossain</div>
               <p className="about-bio-text">
-                Ahaan is a 13-year-old student developer in the Redmond, Washington area,
-                currently in middle school. He has a passion for building tools that solve
-                real problems and is always seeking feedback to make his projects better. 
-                When he isn't on the computer, Ahaan enjoys doing extracurriculars like piano,
-                robotics, and Math. Access his github to see the code or more details about the 
-                project and contact him with any issues via email using the links below, and 
-                check out his other projects!
+                Ahaan is a 13-year-old student developer in Washington State. He builds tools
+                that solve problems he has run into himself, and he is always after feedback to
+                make them better. Away from the keyboard he plays piano and does robotics and
+                competition maths.
+              </p>
+              <p className="about-bio-text">
+                The source is on GitHub, and the fastest way to reach him about a bug, an idea,
+                or anything that looks wrong is email.
               </p>
               <div className="about-bio-links">
                 <a href="https://github.com/creatornerd/findmypro" target="_blank" rel="noopener noreferrer">
@@ -177,6 +163,16 @@ export default function About() {
           </div>
         </section>
 
+        {/* Try it */}
+        <section className="about-section about-try">
+          <h2 className="about-h2">Try it</h2>
+          <p className="about-try-text">
+            Your first search is free — no account, no card. Describe what is going on and
+            see who is well rated near you.
+          </p>
+          <Link to="/chat" className="cta-btn about-try-cta">Start a free search &rarr;</Link>
+        </section>
+
         {/* Disclaimer */}
         <section className="about-section about-disclaimer">
           <p>
@@ -189,8 +185,8 @@ export default function About() {
       </main>
 
       <footer className="about-footer">
-        © 2026 Ahaan Hossain. All rights reserved. ·{' '}
-        <Link to="/">Back to FindMyPro</Link>
+        © {new Date().getFullYear()} Ahaan Hossain. All rights reserved. ·{' '}
+        <Link to="/">Home</Link> · <Link to="/chat">Open FindMyPro</Link>
       </footer>
     </div>
   );

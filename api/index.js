@@ -7,7 +7,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const GUEST_WEEKLY_LIMIT = 5;
+// Guests get a single free search, then the sign-up wall.
+const GUEST_WEEKLY_LIMIT = 1;
 const AUTH_WEEKLY_LIMIT = 15;
 const REFERRAL_BONUS = 10;
 
@@ -23,7 +24,7 @@ async function upstash(path, method = 'POST') {
 }
 
 async function checkRateLimit(ip) {
-  const key = `fmp:rl:${ip}`;
+  const key = `fmp:rl:v2:${ip}`;
   const { result: count } = await upstash(`/incr/${key}`);
   if (count === 1) await upstash(`/expire/${key}/604800`);
   return count <= GUEST_WEEKLY_LIMIT;
