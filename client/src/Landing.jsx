@@ -267,7 +267,7 @@ export default function Landing() {
               autoComplete="off"
             />
             <button type="submit" className="cta-btn lp-search-btn">
-              Find my pro <span aria-hidden="true">&rarr;</span>
+              FindMyPro <span aria-hidden="true">&rarr;</span>
             </button>
           </form>
 

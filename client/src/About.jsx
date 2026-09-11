@@ -135,14 +135,13 @@ export default function About() {
             <div>
               <div className="about-bio-name">Ahaan Hossain</div>
               <p className="about-bio-text">
-                Ahaan is a 13-year-old student developer in Washington State. He builds tools
-                that solve problems he has run into himself, and he is always after feedback to
-                make them better. Away from the keyboard he plays piano and does robotics and
-                competition maths.
-              </p>
-              <p className="about-bio-text">
-                The source is on GitHub, and the fastest way to reach him about a bug, an idea,
-                or anything that looks wrong is email.
+                Ahaan is a 13-year-old student developer, located in the tech hub of the Pacific
+                Northwest, currently in middle school. He has a passion for building tools that
+                solve real problems and is always seeking feedback to make his projects better.
+                When he isn't on the computer, Ahaan enjoys doing extracurriculars like piano,
+                robotics, and Math. Access his github to see the code or more details about the
+                project and contact him with any issues via email using the links below, and
+                check out his other projects!
               </p>
               <div className="about-bio-links">
                 <a href="https://github.com/creatornerd/findmypro" target="_blank" rel="noopener noreferrer">
