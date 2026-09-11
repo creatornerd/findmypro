@@ -372,11 +372,12 @@ function Welcome({ onPick, onFocusInput }) {
   return (
     <section className="welcome">
       <div className="eyebrow"><span className="dot"></span>Real Google ratings &middot; No paid placements</div>
-      <h1 className="headline">What&rsquo;s going on?</h1>
+      <h1 className="headline">Find a lawyer, doctor or<br/>financial advisor.</h1>
       <p className="lede">
-        Describe it in plain words — no jargon, no forms. FindMyPro works out which
-        kind of specialist you need and surfaces the highest-rated, verified
-        practitioners near you. Mention your city, and your country if you are outside the US.
+        Describe your situation in plain words — no jargon, no forms. FindMyPro
+        identifies the type of professional you may need and finds highly rated
+        specialists near you, using real Google ratings and credential verification
+        sources. Mention your city, and your country if you are outside the US.
       </p>
       <button className="cta-btn" onClick={onFocusInput}>Describe your situation &rarr;</button>
 
@@ -781,9 +782,9 @@ function App() {
 
   useSeo({
     path: '/chat',
-    title: 'Search FindMyPro — Describe Your Situation, Get Matched',
+    title: 'Find a Lawyer, Doctor or Financial Advisor | FindMyPro',
     description:
-      'Tell FindMyPro what is going on in plain English and get matched with top-rated lawyers, doctors and financial advisors near you, ranked by real Google reviews.',
+      'Describe your situation and FindMyPro will identify the type of lawyer, doctor or financial advisor you may need and find highly rated professionals near you, using real Google ratings and credential verification sources.',
   });
 
   const taRef          = useRef(null);
