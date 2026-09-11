@@ -5,9 +5,15 @@ import { CompassIcon, SunIcon, MoonIcon } from './icons.jsx';
 import { useTheme } from './theme.js';
 import { useSeo } from './seo.js';
 
+// createClient() throws synchronously if the URL is missing, which would take
+// down the entire app at module load (before React even mounts) on any
+// deployment where these aren't configured — e.g. Vercel preview builds that
+// don't carry production secrets. Falling back to a placeholder host keeps
+// construction safe; auth/sync calls against it simply fail at the network
+// layer, which the call sites already catch.
 const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
+  import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co',
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key'
 );
 
 const API_URL       = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api';
