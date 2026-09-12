@@ -1438,7 +1438,13 @@ body::after {
   background: var(--rule);
 }
 
-.google-btn {
+.oauth-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.oauth-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1454,9 +1460,9 @@ body::after {
   transition: background 0.15s, border-color 0.15s;
   width: 100%;
 }
-.google-btn:hover { background: var(--paper-2); border-color: var(--accent); }
+.oauth-btn:hover { background: var(--paper-2); border-color: var(--accent); }
 
-.google-btn svg {
+.oauth-btn svg {
   flex-shrink: 0;
 }
 

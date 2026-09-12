@@ -186,6 +186,17 @@ function GoogleIcon() {
   );
 }
 
+function MicrosoftIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10" fill="#F25022"/>
+      <rect x="13" y="1" width="10" height="10" fill="#7FBA00"/>
+      <rect x="1" y="13" width="10" height="10" fill="#00A4EF"/>
+      <rect x="13" y="13" width="10" height="10" fill="#FFB900"/>
+    </svg>
+  );
+}
+
 function Mark() {
   return (
     <Link to="/" className="brand" aria-label="FindMyPro home">
@@ -495,6 +506,13 @@ function AuthModal({ initialTab, onClose }) {
     });
   };
 
+  const signInWithMicrosoft = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'azure',
+      options: { redirectTo: window.location.origin, scopes: 'email' },
+    });
+  };
+
   if (verifyNotice) {
     return (
       <div className="gate-overlay" onClick={onClose}>
@@ -516,9 +534,14 @@ function AuthModal({ initialTab, onClose }) {
         <CompassIcon size={34} />
         <h2 className="gate-title">{tab === 'signin' ? 'Welcome back' : 'Create your account'}</h2>
 
-        <button className="google-btn" onClick={signInWithGoogle} type="button">
-          <GoogleIcon /> Continue with Google
-        </button>
+        <div className="oauth-buttons">
+          <button className="oauth-btn" onClick={signInWithGoogle} type="button">
+            <GoogleIcon /> Continue with Google
+          </button>
+          <button className="oauth-btn" onClick={signInWithMicrosoft} type="button">
+            <MicrosoftIcon /> Continue with Microsoft
+          </button>
+        </div>
 
         <div className="auth-divider"><span>or</span></div>
 
