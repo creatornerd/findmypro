@@ -296,6 +296,33 @@ async function serperFetch(url, body) {
   return res.json();
 }
 
+// Directory/aggregator/"best of" sites — these list many providers rather than being
+// one, so they must never be surfaced as if they were an individual result.
+const DIRECTORY_DOMAINS = new Set([
+  'avvo.com', 'findlaw.com', 'justia.com', 'superlawyers.com', 'martindale.com',
+  'lawyers.com', 'nolo.com', 'expertise.com', 'bestlawyers.com', 'lawinfo.com',
+  'upcounsel.com', 'lawyer.com', 'attorneys.com', 'attorney.com',
+  'healthgrades.com', 'vitals.com', 'zocdoc.com', 'webmd.com', 'ratemds.com',
+  'wellness.com', 'sharecare.com', 'caredash.com', 'usnews.com',
+  'yelp.com', 'angi.com', 'thumbtack.com', 'bbb.org', 'manta.com', 'yellowpages.com',
+  'smartasset.com', 'nerdwallet.com', 'bankrate.com', 'forbes.com',
+  'investopedia.com', 'wallethub.com', 'consumeraffairs.com', 'reddit.com',
+]);
+
+// Catches "Top 10 ...", "Best ... Lawyers", "... Law Firms & Lawyers" style listicle/roundup titles.
+const LISTICLE_TITLE_RE = /^(top\s*\d*|best)\b|\btop\s*\d+\b|\b(firms?|lawyers?|attorneys?)\s*&\s*(firms?|lawyers?|attorneys?)\b/i;
+
+function hostnameOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+}
+
+function isDirectoryResult({ name, website }) {
+  const host = hostnameOf(website);
+  if (host && DIRECTORY_DOMAINS.has(host)) return true;
+  if (name && LISTICLE_TITLE_RE.test(name.trim())) return true;
+  return false;
+}
+
 async function searchWithSerper(query) {
   try {
     const placesData = await serperFetch('https://google.serper.dev/places', { q: query, gl: 'us' });
@@ -316,15 +343,19 @@ async function searchWithSerper(query) {
   }
 
   try {
-    const searchData = await serperFetch('https://google.serper.dev/search', { q: query, num: 5 });
-    return (searchData.organic || []).slice(0, 5).map(item => ({
-      name: item.title,
-      rating: null,
-      reviews: null,
-      address: item.snippet || '',
-      phone: '',
-      website: item.link || '',
-    }));
+    // Ask for more than we need since directory/listicle results get filtered out below.
+    const searchData = await serperFetch('https://google.serper.dev/search', { q: query, num: 10 });
+    return (searchData.organic || [])
+      .filter(item => !isDirectoryResult({ name: item.title, website: item.link }))
+      .slice(0, 5)
+      .map(item => ({
+        name: item.title,
+        rating: null,
+        reviews: null,
+        address: item.snippet || '',
+        phone: '',
+        website: item.link || '',
+      }));
   } catch (err) {
     console.warn(`Serper /search fallback failed for "${query}":`, err.message);
     return [];
@@ -333,7 +364,11 @@ async function searchWithSerper(query) {
 
 // Gemini search with Google grounding — requires billing enabled on GCP project
 async function searchWithGemini(query) {
-  const prompt = `Find the top 5 "${query}" results. Return ONLY a JSON array where each object has: name, rating (number or null), reviews (number or null), address, phone, website. No markdown, no code fences.`;
+  const prompt = `Find the top 5 "${query}" results.
+
+Each result MUST be an actual individual business or practitioner a customer could directly contact and hire — not a directory, review aggregator, or "best of"/"top 10" listicle/roundup page. Exclude any result from a site like Avvo, FindLaw, Justia, Super Lawyers, Martindale, Lawyers.com, Yelp, Healthgrades, Zocdoc, NerdWallet, or any similar directory/aggregator — even if it ranks highly in search. If you cannot find real rating/review data for a result, leave rating and reviews null rather than substituting a directory page that has one.
+
+Return ONLY a JSON array where each object has: name, rating (number or null), reviews (number or null), address, phone, website. No markdown, no code fences.`;
   let result;
   for (let m = 0; m < GEMINI_MODELS.length; m++) {
     try {
@@ -351,14 +386,17 @@ async function searchWithGemini(query) {
   const text = result.response.text().trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   const match = text.match(/\[[\s\S]*\]/);
   if (!match) return [];
-  return JSON.parse(match[0]).slice(0, 5).map(item => ({
-    name: item.name || '',
-    rating: typeof item.rating === 'number' ? item.rating : null,
-    reviews: typeof item.reviews === 'number' ? item.reviews : null,
-    address: item.address || '',
-    phone: item.phone || '',
-    website: item.website || '',
-  }));
+  return JSON.parse(match[0])
+    .filter(item => !isDirectoryResult({ name: item.name, website: item.website }))
+    .slice(0, 5)
+    .map(item => ({
+      name: item.name || '',
+      rating: typeof item.rating === 'number' ? item.rating : null,
+      reviews: typeof item.reviews === 'number' ? item.reviews : null,
+      address: item.address || '',
+      phone: item.phone || '',
+      website: item.website || '',
+    }));
 }
 
 app.post('/api/search', async (req, res) => {
