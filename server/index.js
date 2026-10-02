@@ -11,7 +11,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const GUEST_WEEKLY_LIMIT = 5;
+// Guests get a single free search, then the sign-up wall.
+const GUEST_WEEKLY_LIMIT = 1;
 const AUTH_WEEKLY_LIMIT = 15;
 const REFERRAL_BONUS = 10;
 
@@ -25,7 +26,7 @@ async function upstash(path, method = 'POST') {
 
 async function checkRateLimit(ip) {
   try {
-    const key = `fmp:rl:${ip}`;
+    const key = `fmp:rl:v2:${ip}`;
     const { result: count } = await upstash(`/incr/${key}`);
     if (count === 1) await upstash(`/expire/${key}/604800`);
     return count <= GUEST_WEEKLY_LIMIT;
@@ -464,7 +465,7 @@ app.get('/api/usage', async (req, res) => {
       const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
               || req.socket?.remoteAddress
               || 'unknown';
-      const key = `fmp:rl:${ip}`;
+      const key = `fmp:rl:v2:${ip}`;
       let used = 0, ttl = -2;
       try { used = await getUsageCount(key); ttl = await getUsageTtl(key); }
       catch (err) { console.warn('Usage lookup failed:', err.message); }

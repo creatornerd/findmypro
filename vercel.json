@@ -3,6 +3,8 @@
   "outputDirectory": "client/dist",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/chat", "destination": "/chat/index.html" },
+    { "source": "/about", "destination": "/about/index.html" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [
