@@ -5,15 +5,32 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 
 // Guests get a single free search, then the sign-up wall.
 const GUEST_WEEKLY_LIMIT = 1;
 const AUTH_WEEKLY_LIMIT = 15;
 const REFERRAL_BONUS = 10;
+// A referrer stops earning after this many rewarded referrals (caps bonus at +50/week).
+const MAX_REWARDED_REFERRALS = 5;
 
+// Guards on paid/free-tier upstream APIs (Serper credits, Gemini quota).
+const MAX_QUERIES_PER_SEARCH = 3;
+const MAX_QUERY_LENGTH = 200;
+const CHAT_HOURLY_LIMIT = 40;
+const MAX_CHAT_MESSAGES = 30;
+const MAX_MESSAGE_LENGTH = 2000;
+
+// `supabase` is only used to verify user JWTs. All table reads/writes go through
+// `supabaseAdmin` (service role) so RLS can deny every write from the browser.
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+function clientIp(req) {
+  return (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+      || req.socket?.remoteAddress
+      || 'unknown';
+}
 
 async function upstash(path, method = 'POST') {
   const res = await fetch(`${process.env.UPSTASH_REDIS_REST_URL}${path}`, {
@@ -47,6 +64,18 @@ async function checkAuthRateLimit(userId, bonusSearches = 0) {
   }
 }
 
+async function checkChatRateLimit(ip) {
+  try {
+    const key = `fmp:rl:chat:${ip}`;
+    const { result: count } = await upstash(`/incr/${key}`);
+    if (count === 1) await upstash(`/expire/${key}/3600`);
+    return count <= CHAT_HOURLY_LIMIT;
+  } catch (err) {
+    console.warn('Upstash chat rate-limit check failed, allowing request:', err.message);
+    return true;
+  }
+}
+
 // Read the current usage count for a key WITHOUT incrementing it.
 async function getUsageCount(key) {
   const { result } = await upstash(`/get/${key}`);
@@ -70,21 +99,70 @@ async function getAuthenticatedUser(authHeader) {
   }
 }
 
-function generateReferralCode(userId) {
-  return userId.replace(/-/g, '').slice(0, 8);
+const REFERRAL_CODE_RE = /^[a-f0-9]{8,32}$/;
+
+// Returns the user's referral code, creating it on first use. The default code is
+// the first 8 hex chars of their uuid (matches links shared before codes were stored);
+// on the rare collision we fall back to a longer slice.
+async function getOrCreateReferralCode(userId) {
+  const { data: existing } = await supabaseAdmin
+    .from('referral_codes')
+    .select('code')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (existing) return existing.code;
+
+  const hex = userId.replace(/-/g, '');
+  for (const len of [8, 12, 32]) {
+    const code = hex.slice(0, len);
+    const { error } = await supabaseAdmin.from('referral_codes').insert({ user_id: userId, code });
+    if (!error) return code;
+    if (error.code !== '23505') throw error;
+    // 23505 = unique violation: either this user raced us (re-read) or the code is taken (try longer).
+    const { data: raced } = await supabaseAdmin
+      .from('referral_codes').select('code').eq('user_id', userId).maybeSingle();
+    if (raced) return raced.code;
+  }
+  throw new Error('Could not allocate referral code');
+}
+
+async function findReferrerByCode(code) {
+  if (typeof code !== 'string' || !REFERRAL_CODE_RE.test(code)) return null;
+  const { data } = await supabaseAdmin
+    .from('referral_codes')
+    .select('user_id')
+    .eq('code', code)
+    .maybeSingle();
+  return data?.user_id || null;
 }
 
 async function getBonusSearches(userId) {
-  const { data } = await supabase
+  const { data } = await supabaseAdmin
     .from('bonus_searches')
     .select('bonus_count')
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
   return data?.bonus_count || 0;
 }
 
+// Credits the referrer (if any) once the referred user has actually run a search.
+async function rewardPendingReferral(userId) {
+  try {
+    const { error } = await supabaseAdmin.rpc('reward_referral', {
+      p_referred: userId,
+      p_bonus: REFERRAL_BONUS,
+      p_max_rewarded: MAX_REWARDED_REFERRALS,
+    });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('Referral reward failed:', err.message);
+  }
+}
+
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash'];
+// Gemini 2.0 models are shut down and 2.5 is limited to existing users.
+// Lite first (cheaper, higher free-tier limits), full Flash as fallback.
+const GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
 
 async function geminiWithRetry(fn, retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -130,6 +208,7 @@ TRIAGE RULES — follow these before recommending any specialist:
    - Symptoms that are clearly neurological: sudden numbness, sudden loss of vision, sudden severe headache, slurred speech (NOTE: for these, also tell them to seek emergency care immediately, not just find a specialist)
 
 3. MULTIPLE POSSIBLE SPECIALISTS — if the situation could involve 2 types, mention both and ask which fits better, or recommend both if clearly applicable (e.g., car accident = personal injury lawyer + orthopedic surgeon).
+   CRITICAL: when recommending two distinct professional types (e.g. "tax attorney or CPA", "cardiologist or pulmonologist"), ALWAYS create a SEPARATE search entry for each type — never merge them into one label. One label must match one type of professional. Merging leads to mismatched results that confuse users.
 
 4. TONE RULES — critical:
    - Never say "I am very concerned" or use alarming language for vague symptoms.
@@ -147,16 +226,18 @@ RESPONSE FORMAT — always respond with valid JSON:
   "searches": [
     {
       "query": "best personal injury lawyer in Chicago",
-      "label": "Personal Injury Lawyer"
+      "label": "Personal Injury Lawyer",
+      "reason": "One sentence explaining why this specialist fits the user's specific situation."
     }
   ]
 }
 
 FIELD RULES:
 - "readyToSearch": true ONLY when you have (a) a clear professional type AND (b) the user's city
-- "searches": 1-3 items, only when readyToSearch is true. Query format: "best [specialist] in [city]"
+- "searches": 1-3 items, only when readyToSearch is true. Query format: "best [specialist] in [city]". Be specific: use "personal injury law firm" not just "lawyer", "licensed CPA" not just "accountant", "tax attorney law firm" not "tax help" — this prevents unrelated businesses (e.g. tax relief firms) from appearing under a professional label.
 - "needsLocation": true when professional type is known but city is missing
 - "searches": empty array [] when readyToSearch is false
+- "reason": one sentence explaining why this specialist fits the user's described situation (e.g. "Your car accident puts this in personal injury territory, where a lawyer can pursue compensation for medical bills and lost wages.")
 
 EXAMPLES OF CORRECT BEHAVIOR:
 
@@ -205,7 +286,18 @@ function needsTriage(messages) {
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const { messages } = req.body;
+    const { messages } = req.body || {};
+    const valid = Array.isArray(messages)
+      && messages.length > 0
+      && messages.length <= MAX_CHAT_MESSAGES
+      && messages.every(m => m && (m.role === 'user' || m.role === 'assistant')
+        && typeof m.content === 'string' && m.content.length <= MAX_MESSAGE_LENGTH)
+      && messages[messages.length - 1].role === 'user';
+    if (!valid) return res.status(400).json({ error: 'Invalid messages' });
+
+    if (!(await checkChatRateLimit(clientIp(req)))) {
+      return res.status(429).json({ error: 'chat_rate_limited', message: "You're sending messages too quickly. Please wait a bit and try again." });
+    }
 
     // Gemini uses 'model' role instead of 'assistant'
     const history = messages.slice(0, -1).map(m => ({
@@ -304,20 +396,46 @@ function isDirectoryResult({ name, website }) {
   return false;
 }
 
+// Ranks by Google rating weighted by review volume (a Bayesian average), so a 5.0 from
+// 3 reviews doesn't outrank a 4.8 from 900. Unrated results keep Google's order, last.
+const PRIOR_RATING = 4.0;
+const PRIOR_WEIGHT = 20;
+
+function ratingScore({ rating, reviews }) {
+  if (rating == null) return -1;
+  const n = Number(reviews) || 0;
+  return (n * Number(rating) + PRIOR_WEIGHT * PRIOR_RATING) / (n + PRIOR_WEIGHT);
+}
+
+function rankByRating(items) {
+  return items
+    .map((item, i) => ({ item, i, score: ratingScore(item) }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map(x => x.item);
+}
+
+function buildWhy(reason, item) {
+  if (!reason) return null;
+  if (item.rating && item.reviews) {
+    return `${reason} Rated ${Number(item.rating).toFixed(1)}/5 across ${item.reviews} Google reviews.`;
+  }
+  return reason;
+}
+
 async function searchWithSerper(query) {
   try {
     const placesData = await serperFetch('https://google.serper.dev/places', { q: query, gl: 'us' });
-    const places = (placesData.places || []).slice(0, 5);
+    const places = placesData.places || [];
 
     if (places.length > 0) {
-      return places.map(p => ({
+      return rankByRating(places.map(p => ({
         name: p.title || p.name || '',
         rating: p.rating || null,
         reviews: p.ratingCount || p.reviews || null,
         address: p.address || '',
         phone: p.phoneNumber || p.phone || '',
         website: p.website || '',
-      }));
+      }))).slice(0, 5);
     }
   } catch (err) {
     console.warn(`Serper /places failed for "${query}":`, err.message);
@@ -345,12 +463,26 @@ async function searchWithSerper(query) {
 
 app.post('/api/search', async (req, res) => {
   try {
+    // Validate before touching the rate limiter so malformed requests don't burn a search,
+    // and cap the query count so one request can't drain Serper credits.
+    const rawQueries = req.body?.queries;
+    const validQueries = Array.isArray(rawQueries)
+      && rawQueries.length > 0
+      && rawQueries.length <= MAX_QUERIES_PER_SEARCH
+      && rawQueries.every(q => q && typeof q.query === 'string'
+        && q.query.trim().length > 0 && q.query.length <= MAX_QUERY_LENGTH);
+    if (!validQueries) {
+      return res.status(400).json({ error: `Send 1-${MAX_QUERIES_PER_SEARCH} search queries.` });
+    }
+    const queries = rawQueries.map(q => ({
+      query: q.query.trim(),
+      label: typeof q.label === 'string' ? q.label.slice(0, 100) : '',
+      reason: typeof q.reason === 'string' ? q.reason.slice(0, 400) : '',
+    }));
+
     const user = await getAuthenticatedUser(req.headers.authorization);
     if (!user) {
-      const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-              || req.socket?.remoteAddress
-              || 'unknown';
-      const allowed = await checkRateLimit(ip);
+      const allowed = await checkRateLimit(clientIp(req));
       if (!allowed) {
         return res.status(429).json({ error: 'weekly_limit_reached', limit: GUEST_WEEKLY_LIMIT });
       }
@@ -362,12 +494,10 @@ app.post('/api/search', async (req, res) => {
       }
     }
 
-    const { queries } = req.body;
-
     const settled = await Promise.allSettled(
-      queries.map(async ({ query, label }) => {
+      queries.map(async ({ query, label, reason }) => {
         const items = await searchWithSerper(query);
-        return { label, results: items };
+        return { label, results: items.map(item => ({ ...item, why: buildWhy(reason, item) })) };
       })
     );
 
@@ -376,6 +506,8 @@ app.post('/api/search', async (req, res) => {
       console.warn(`Search query "${queries[i].query}" failed:`, r.reason?.message);
       return { label: queries[i].label, results: [] };
     });
+
+    if (user) await rewardPendingReferral(user.id);
 
     res.json({ results });
   } catch (error) {
@@ -394,10 +526,7 @@ app.get('/api/usage', async (req, res) => {
     const user = await getAuthenticatedUser(req.headers.authorization);
 
     if (!user) {
-      const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-              || req.socket?.remoteAddress
-              || 'unknown';
-      const key = `fmp:rl:v2:${ip}`;
+      const key = `fmp:rl:v2:${clientIp(req)}`;
       let used = 0, ttl = -2;
       try { used = await getUsageCount(key); ttl = await getUsageTtl(key); }
       catch (err) { console.warn('Usage lookup failed:', err.message); }
@@ -438,6 +567,7 @@ app.get('/api/usage', async (req, res) => {
   }
 });
 
+
 /* ─── Referral endpoints ───────────────────────────────── */
 
 app.get('/api/referral/info', async (req, res) => {
@@ -445,15 +575,15 @@ app.get('/api/referral/info', async (req, res) => {
     const user = await getAuthenticatedUser(req.headers.authorization);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const referralCode = generateReferralCode(user.id);
+    const referralCode = await getOrCreateReferralCode(user.id);
 
-    const { data: referrals } = await supabase
+    const { data: referrals } = await supabaseAdmin
       .from('referrals')
       .select('id, rewarded, created_at')
       .eq('referrer_id', user.id);
 
     const successfulReferrals = (referrals || []).filter(r => r.rewarded).length;
-    const bonusSearches = successfulReferrals * REFERRAL_BONUS;
+    const bonusSearches = Math.min(successfulReferrals, MAX_REWARDED_REFERRALS) * REFERRAL_BONUS;
 
     res.json({
       referralCode,
@@ -461,6 +591,7 @@ app.get('/api/referral/info', async (req, res) => {
       totalReferrals: (referrals || []).length,
       successfulReferrals,
       bonusSearches,
+      maxBonusSearches: MAX_REWARDED_REFERRALS * REFERRAL_BONUS,
     });
   } catch (error) {
     console.error('Referral info error:', error);
@@ -468,40 +599,26 @@ app.get('/api/referral/info', async (req, res) => {
   }
 });
 
+// Records who referred this user. The referrer is NOT credited here — that happens
+// in /api/search after the new user's first search (see rewardPendingReferral).
 app.post('/api/referral/claim', async (req, res) => {
   try {
     const user = await getAuthenticatedUser(req.headers.authorization);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { referralCode } = req.body;
+    const { referralCode } = req.body || {};
     if (!referralCode) return res.status(400).json({ error: 'No referral code provided' });
 
-    const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
-    const referrer = (allUsers?.users || []).find(
-      u => generateReferralCode(u.id) === referralCode
-    );
+    const referrerId = await findReferrerByCode(referralCode);
+    if (!referrerId) return res.status(400).json({ error: 'Invalid referral code' });
+    if (referrerId === user.id) return res.status(400).json({ error: 'Cannot refer yourself' });
 
-    if (!referrer) return res.status(400).json({ error: 'Invalid referral code' });
-    if (referrer.id === user.id) return res.status(400).json({ error: 'Cannot refer yourself' });
-
-    const { data: existing } = await supabase
+    const { error: insertErr } = await supabaseAdmin
       .from('referrals')
-      .select('id')
-      .eq('referred_user_id', user.id)
-      .single();
+      .insert({ referrer_id: referrerId, referred_user_id: user.id, rewarded: false });
 
-    if (existing) return res.status(400).json({ error: 'Already referred' });
-
-    const { error: insertErr } = await supabase
-      .from('referrals')
-      .insert({ referrer_id: referrer.id, referred_user_id: user.id, rewarded: true });
-
+    if (insertErr?.code === '23505') return res.status(400).json({ error: 'Already referred' });
     if (insertErr) throw insertErr;
-
-    const currentBonus = await getBonusSearches(referrer.id);
-    await supabase
-      .from('bonus_searches')
-      .upsert({ user_id: referrer.id, bonus_count: currentBonus + REFERRAL_BONUS, updated_at: new Date().toISOString() });
 
     res.json({ success: true });
   } catch (error) {
@@ -512,12 +629,7 @@ app.post('/api/referral/claim', async (req, res) => {
 
 app.get('/api/referral/validate/:code', async (req, res) => {
   try {
-    const { code } = req.params;
-    const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
-    const referrer = (allUsers?.users || []).find(
-      u => generateReferralCode(u.id) === code
-    );
-    res.json({ valid: !!referrer });
+    res.json({ valid: !!(await findReferrerByCode(req.params.code)) });
   } catch {
     res.json({ valid: false });
   }

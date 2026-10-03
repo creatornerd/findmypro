@@ -415,8 +415,8 @@ function Welcome({ onPick, onFocusInput }) {
       <p className="lede">
         Describe your situation in plain words — no jargon, no forms. FindMyPro
         identifies the type of professional you may need and finds highly rated
-        specialists near you, using real Google ratings and credential verification
-        sources. Mention your city, and your country if you are outside the US.
+        specialists near you, using real Google ratings, with links to verify
+        credentials. Mention your city, and your country if you are outside the US.
       </p>
       <button className="cta-btn" onClick={onFocusInput}>Describe your situation &rarr;</button>
 
@@ -651,7 +651,7 @@ function GateModal({ onClose, onShowAuth, variant = 'blocked' }) {
         <ul className="gate-perks">
           <li><GateCheck /> {AUTH_WEEKLY_LIMIT} searches every week</li>
           <li><GateCheck /> Conversation history saved across devices</li>
-          <li><GateCheck /> +{REFERRAL_BONUS} bonus searches for every friend you refer</li>
+          <li><GateCheck /> +{REFERRAL_BONUS} bonus searches for every friend you refer who searches</li>
           <li><GateCheck /> Free forever &mdash; no card required</li>
         </ul>
 
@@ -719,7 +719,7 @@ function ReferralPanel({ session, onClose }) {
         <CompassIcon size={34} />
         <h2 className="gate-title">Refer a Friend</h2>
         <p className="gate-text">
-          Share your link — when someone signs up, you get <strong>+10 bonus searches/week</strong>.
+          Share your link — when a friend signs up and runs their first search, you get <strong>+{REFERRAL_BONUS} bonus searches/week</strong> (up to +{info?.maxBonusSearches ?? 50}).
         </p>
 
         <div className="referral-link-box">
@@ -942,7 +942,7 @@ function App() {
     path: '/chat',
     title: 'Find a Lawyer, Doctor or Financial Advisor | FindMyPro',
     description:
-      'Describe your situation and FindMyPro will identify the type of lawyer, doctor or financial advisor you may need and find highly rated professionals near you, using real Google ratings and credential verification sources.',
+      'Describe your situation and FindMyPro will identify the type of lawyer, doctor or financial advisor you may need and find highly rated professionals near you, using real Google ratings, with links to verify credentials.',
   });
 
   const taRef          = useRef(null);
@@ -1140,6 +1140,13 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: next }),
       });
+      if (chatRes.status === 429) {
+        const body = await chatRes.json().catch(() => ({}));
+        setMessages(m => [...m, { role: 'assistant', content: body.message || "You're sending messages too quickly. Please wait a bit and try again." }]);
+        setLoading(false);
+        setStage('asking');
+        return;
+      }
       if (!chatRes.ok) throw new Error('API request failed');
       const data = await chatRes.json();
       if (!data.message) throw new Error('No response from AI');
@@ -1427,11 +1434,15 @@ function App() {
                   : 'Free search used — sign up to continue'}
             </button>
           </div>
+          <p className="composer-privacy">
+            Messages are processed by Google Gemini. Don&rsquo;t include names, ID numbers or medical records.{' '}
+            <Link to="/about#privacy">Privacy</Link>
+          </p>
         </footer>
 
         <div className="site-credit">
           © {new Date().getFullYear()} Ahaan Hossain. All rights reserved. ·{' '}
-          <Link to="/">Home</Link> · <Link to="/about">About</Link>
+          <Link to="/">Home</Link> · <Link to="/about">About</Link> · <Link to="/about#privacy">Privacy</Link>
         </div>
       </div>
 
