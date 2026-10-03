@@ -686,15 +686,16 @@ function ReferralPanel({ session, onClose }) {
   const [info, setInfo] = useState(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!session) return;
     fetch(`${API_URL}/referral/info`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error('referral info failed'); return r.json(); })
       .then(data => { setInfo(data); setLoading(false); })
-      .catch(() => setLoading(false));
+      .catch(() => { setFailed(true); setLoading(false); });
   }, [session]);
 
   const copyLink = () => {
@@ -718,11 +719,16 @@ function ReferralPanel({ session, onClose }) {
       <div className="gate-modal referral-modal" onClick={e => e.stopPropagation()}>
         <CompassIcon size={34} />
         <h2 className="gate-title">Refer a Friend</h2>
+        {failed && (
+          <p className="gate-text" role="alert">
+            We couldn&rsquo;t load your referral link right now. Please try again in a moment.
+          </p>
+        )}
         <p className="gate-text">
           Share your link — when a friend signs up and runs their first search, you get <strong>+{REFERRAL_BONUS} bonus searches/week</strong> (up to +{info?.maxBonusSearches ?? 50}).
         </p>
 
-        <div className="referral-link-box">
+        {!failed && <div className="referral-link-box">
           <input
             type="text"
             readOnly
@@ -733,7 +739,7 @@ function ReferralPanel({ session, onClose }) {
           <button className="cta-btn" onClick={copyLink} style={{ marginTop: 8, width: '100%', justifyContent: 'center' }}>
             {copied ? 'Copied!' : 'Copy referral link'}
           </button>
-        </div>
+        </div>}
 
         <div className="referral-stats">
           <div className="referral-stat">
