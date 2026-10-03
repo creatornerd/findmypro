@@ -415,8 +415,8 @@ function Welcome({ onPick, onFocusInput }) {
       <p className="lede">
         Describe your situation in plain words — no jargon, no forms. FindMyPro
         identifies the type of professional you may need and finds highly rated
-        specialists near you, using real Google ratings and credential verification
-        sources. Mention your city, and your country if you are outside the US.
+        specialists near you, using real Google ratings, with links to verify
+        credentials. Mention your city, and your country if you are outside the US.
       </p>
       <button className="cta-btn" onClick={onFocusInput}>Describe your situation &rarr;</button>
 
@@ -651,7 +651,7 @@ function GateModal({ onClose, onShowAuth, variant = 'blocked' }) {
         <ul className="gate-perks">
           <li><GateCheck /> {AUTH_WEEKLY_LIMIT} searches every week</li>
           <li><GateCheck /> Conversation history saved across devices</li>
-          <li><GateCheck /> +{REFERRAL_BONUS} bonus searches for every friend you refer</li>
+          <li><GateCheck /> +{REFERRAL_BONUS} bonus searches for every friend you refer who searches</li>
           <li><GateCheck /> Free forever &mdash; no card required</li>
         </ul>
 
@@ -686,15 +686,16 @@ function ReferralPanel({ session, onClose }) {
   const [info, setInfo] = useState(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!session) return;
     fetch(`${API_URL}/referral/info`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error('referral info failed'); return r.json(); })
       .then(data => { setInfo(data); setLoading(false); })
-      .catch(() => setLoading(false));
+      .catch(() => { setFailed(true); setLoading(false); });
   }, [session]);
 
   const copyLink = () => {
@@ -718,11 +719,16 @@ function ReferralPanel({ session, onClose }) {
       <div className="gate-modal referral-modal" onClick={e => e.stopPropagation()}>
         <CompassIcon size={34} />
         <h2 className="gate-title">Refer a Friend</h2>
+        {failed && (
+          <p className="gate-text" role="alert">
+            We couldn&rsquo;t load your referral link right now. Please try again in a moment.
+          </p>
+        )}
         <p className="gate-text">
-          Share your link — when someone signs up, you get <strong>+10 bonus searches/week</strong>.
+          Share your link — when a friend signs up and runs their first search, you get <strong>+{REFERRAL_BONUS} bonus searches/week</strong> (up to +{info?.maxBonusSearches ?? 50}).
         </p>
 
-        <div className="referral-link-box">
+        {!failed && <div className="referral-link-box">
           <input
             type="text"
             readOnly
@@ -733,7 +739,7 @@ function ReferralPanel({ session, onClose }) {
           <button className="cta-btn" onClick={copyLink} style={{ marginTop: 8, width: '100%', justifyContent: 'center' }}>
             {copied ? 'Copied!' : 'Copy referral link'}
           </button>
-        </div>
+        </div>}
 
         <div className="referral-stats">
           <div className="referral-stat">
@@ -942,7 +948,7 @@ function App() {
     path: '/chat',
     title: 'Find a Lawyer, Doctor or Financial Advisor | FindMyPro',
     description:
-      'Describe your situation and FindMyPro will identify the type of lawyer, doctor or financial advisor you may need and find highly rated professionals near you, using real Google ratings and credential verification sources.',
+      'Describe your situation and FindMyPro will identify the type of lawyer, doctor or financial advisor you may need and find highly rated professionals near you, using real Google ratings, with links to verify credentials.',
   });
 
   const taRef          = useRef(null);
@@ -1140,6 +1146,13 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: next }),
       });
+      if (chatRes.status === 429) {
+        const body = await chatRes.json().catch(() => ({}));
+        setMessages(m => [...m, { role: 'assistant', content: body.message || "You're sending messages too quickly. Please wait a bit and try again." }]);
+        setLoading(false);
+        setStage('asking');
+        return;
+      }
       if (!chatRes.ok) throw new Error('API request failed');
       const data = await chatRes.json();
       if (!data.message) throw new Error('No response from AI');
@@ -1386,7 +1399,7 @@ function App() {
                   )}
                   {results && (
                     <p className="fineprint">
-                      Results ranked by Google rating. Data sourced from Google Places via Serper — no sponsored listings, no paid placements.
+                      Results ranked by Google rating. Data sourced from Google Places — no sponsored listings, no paid placements.
                       FindMyPro helps narrow your options — it is not legal, medical, or financial advice.
                       Always verify credentials directly: lawyers via your <a href="https://www.americanbar.org/groups/legal_services/flh-home/" target="_blank" rel="noopener noreferrer">State Bar</a>, doctors via the <a href="https://www.fsmb.org/physician-data-center/" target="_blank" rel="noopener noreferrer">Medical Board</a>, financial advisors via <a href="https://brokercheck.finra.org" target="_blank" rel="noopener noreferrer">FINRA BrokerCheck</a>.
                     </p>
@@ -1427,11 +1440,15 @@ function App() {
                   : 'Free search used — sign up to continue'}
             </button>
           </div>
+          <p className="composer-privacy">
+            Messages are processed by Google Gemini. Don&rsquo;t include names, ID numbers or medical records.{' '}
+            <Link to="/about#privacy">Privacy</Link>
+          </p>
         </footer>
 
         <div className="site-credit">
           © {new Date().getFullYear()} Ahaan Hossain. All rights reserved. ·{' '}
-          <Link to="/">Home</Link> · <Link to="/about">About</Link>
+          <Link to="/">Home</Link> · <Link to="/about">About</Link> · <Link to="/about#privacy">Privacy</Link>
         </div>
       </div>
 

@@ -1,15 +1,12 @@
-import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { CompassIcon, SunIcon, MoonIcon } from './icons.jsx';
 import { useTheme } from './theme.js';
 import { useSeo, SITE_URL } from './seo.js';
 
 const STACK = [
   { name: 'Gemini',       by: 'Conversational AI',   href: 'https://deepmind.google/technologies/gemini/' },
-  { name: 'Serper',       by: 'Google Places data',  href: 'https://serper.dev' },
-  { name: 'Supabase',     by: 'Accounts & sign-in',  href: 'https://supabase.com' },
-  { name: 'Upstash',      by: 'Usage limits',        href: 'https://upstash.com' },
   { name: 'Vercel',       by: 'Hosting',             href: 'https://vercel.com' },
-  { name: 'React + Vite', by: 'Frontend',            href: 'https://vite.dev' },
 ];
 
 const HOW_IT_WORKS = [
@@ -35,8 +32,33 @@ const HOW_IT_WORKS = [
   },
 ];
 
+const PRIVACY = [
+  {
+    title: 'What you type goes to Google Gemini',
+    desc: 'Your chat messages are sent to Google\'s Gemini AI so it can work out which professional you need. FindMyPro uses Gemini\'s free tier, where Google may use what you send to improve its products, and people at Google may review it.',
+  },
+  {
+    title: 'Search terms go to a search-data provider',
+    desc: 'Once the type of professional and your city are clear, a short search like "personal injury lawyer in Chicago" is sent to Serper, a search-data provider, which looks it up on Google. Your full conversation is not included.',
+  },
+  {
+    title: 'Where your conversations are kept',
+    desc: 'As a guest, your conversations stay in this browser. If you sign in, they are saved to your account so you can pick them up on another device. "Clear history" deletes them from both.',
+  },
+  {
+    title: 'Your IP address, briefly',
+    desc: 'Your IP address is used to enforce search and message limits, and those counters expire within a week. There are no ads, no tracking pixels, and nothing is sold to lead-generation firms.',
+  },
+];
+
 export default function About() {
   const [darkMode, setDarkMode] = useTheme();
+  const { hash } = useLocation();
+
+  // Router navigation doesn't scroll to #anchors (e.g. /about#privacy) on its own.
+  useEffect(() => {
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView();
+  }, [hash]);
 
   useSeo({
     path: '/about',
@@ -172,6 +194,24 @@ export default function About() {
           <Link to="/chat" className="cta-btn about-try-cta">Start a free search &rarr;</Link>
         </section>
 
+        {/* Privacy */}
+        <section className="about-section" id="privacy" aria-labelledby="about-privacy">
+          <h2 id="about-privacy" className="about-h2">Privacy</h2>
+          <p className="about-privacy-callout">
+            Please don&rsquo;t type names, ID or account numbers, or medical records. Describe
+            your situation in general terms &mdash; &ldquo;I was rear-ended in Chicago and my back
+            hurts&rdquo; is all FindMyPro needs.
+          </p>
+          <div className="about-steps">
+            {PRIVACY.map(p => (
+              <div key={p.title}>
+                <div className="about-step-title">{p.title}</div>
+                <div className="about-step-desc">{p.desc}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* Disclaimer */}
         <section className="about-section about-disclaimer">
           <p>
@@ -185,7 +225,7 @@ export default function About() {
 
       <footer className="about-footer">
         © {new Date().getFullYear()} Ahaan Hossain. All rights reserved. ·{' '}
-        <Link to="/">Home</Link> · <Link to="/chat">Open FindMyPro</Link>
+        <Link to="/">Home</Link> · <Link to="/chat">Open FindMyPro</Link> · <a href="#privacy">Privacy</a>
       </footer>
     </div>
   );
