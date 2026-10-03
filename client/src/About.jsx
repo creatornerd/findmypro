@@ -6,11 +6,7 @@ import { useSeo, SITE_URL } from './seo.js';
 
 const STACK = [
   { name: 'Gemini',       by: 'Conversational AI',   href: 'https://deepmind.google/technologies/gemini/' },
-  { name: 'Serper',       by: 'Google Places data',  href: 'https://serper.dev' },
-  { name: 'Supabase',     by: 'Accounts & sign-in',  href: 'https://supabase.com' },
-  { name: 'Upstash',      by: 'Usage limits',        href: 'https://upstash.com' },
   { name: 'Vercel',       by: 'Hosting',             href: 'https://vercel.com' },
-  { name: 'React + Vite', by: 'Frontend',            href: 'https://vite.dev' },
 ];
 
 const HOW_IT_WORKS = [
@@ -42,12 +38,12 @@ const PRIVACY = [
     desc: 'Your chat messages are sent to Google\'s Gemini AI so it can work out which professional you need. FindMyPro uses Gemini\'s free tier, where Google may use what you send to improve its products, and people at Google may review it.',
   },
   {
-    title: 'Searches go to Google via Serper',
-    desc: 'Once the type of professional and your city are clear, a short search like "personal injury lawyer in Chicago" is sent to Serper, which looks it up on Google. Your full conversation is not included.',
+    title: 'Search terms go to a search-data provider',
+    desc: 'Once the type of professional and your city are clear, a short search like "personal injury lawyer in Chicago" is sent to Serper, a search-data provider, which looks it up on Google. Your full conversation is not included.',
   },
   {
     title: 'Where your conversations are kept',
-    desc: 'As a guest, your conversations stay in this browser. If you sign in, they are saved to your account (stored with Supabase) so you can pick them up on another device. "Clear history" deletes them from both.',
+    desc: 'As a guest, your conversations stay in this browser. If you sign in, they are saved to your account so you can pick them up on another device. "Clear history" deletes them from both.',
   },
   {
     title: 'Your IP address, briefly',

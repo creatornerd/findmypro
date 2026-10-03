@@ -1393,7 +1393,7 @@ function App() {
                   )}
                   {results && (
                     <p className="fineprint">
-                      Results ranked by Google rating. Data sourced from Google Places via Serper — no sponsored listings, no paid placements.
+                      Results ranked by Google rating. Data sourced from Google Places — no sponsored listings, no paid placements.
                       FindMyPro helps narrow your options — it is not legal, medical, or financial advice.
                       Always verify credentials directly: lawyers via your <a href="https://www.americanbar.org/groups/legal_services/flh-home/" target="_blank" rel="noopener noreferrer">State Bar</a>, doctors via the <a href="https://www.fsmb.org/physician-data-center/" target="_blank" rel="noopener noreferrer">Medical Board</a>, financial advisors via <a href="https://brokercheck.finra.org" target="_blank" rel="noopener noreferrer">FINRA BrokerCheck</a>.
                     </p>
