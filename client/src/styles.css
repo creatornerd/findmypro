@@ -816,6 +816,61 @@ body::after {
   transform: translateY(-1px);
 }
 .refine-chip:active { transform: translateY(0); }
+.refine-chip:disabled { cursor: default; opacity: 0.55; transform: none; }
+.refine-chip:disabled:hover { background: transparent; border-color: var(--rule); border-style: dashed; color: var(--ink-3); }
+.refine-chip.is-active,
+.refine-chip.is-active:hover {
+  opacity: 1;
+  background: var(--accent-tint);
+  border: 1px solid var(--accent);
+  color: var(--accent-deep);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.refine-hint {
+  margin: -4px 0 12px;
+  font-size: 13px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+.refine-status {
+  position: sticky;
+  top: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+  font-size: 14px;
+  line-height: 1.45;
+  box-shadow: var(--shadow-lift);
+}
+.refine-status q { font-style: italic; }
+.refine-status.is-done { position: static; box-shadow: none; }
+.refine-status.is-link { width: 100%; font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.refine-status.is-link:hover { background: var(--accent-tint-2); }
+.refine-status-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.results.is-stale .results-head,
+.results.is-stale .cards,
+.results.is-stale .results-actions {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
 
 /* ── Fine print ────────────────────────────────────── */
 
