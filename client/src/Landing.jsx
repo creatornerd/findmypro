@@ -58,12 +58,12 @@ const REASONS = [
     desc: 'Directories make you pick a practice area before you can search. If you knew the practice area, you would not need the directory. Describe the problem instead.',
   },
   {
-    title: 'Every result is verifiable',
-    desc: 'Each match ships with a link to the official register — State Bar, Medical Board, or FINRA BrokerCheck — so you can confirm a licence before you pick up the phone.',
+    title: 'Every result is checkable',
+    desc: 'Each match comes with a lookup link — the State Bar or FINRA BrokerCheck where we can, or a public directory otherwise — so you can check a licence yourself before you pick up the phone. FindMyPro does not verify anyone for you.',
   },
   {
     title: 'Your conversation stays yours',
-    desc: 'Searches are not sold to lead-generation firms and your details are never passed to a professional without you making that call. There is no "we will have someone contact you".',
+    desc: 'Searches are not sold to lead-generation firms and your details are never passed to a professional without you making that call. There is no "we will have someone contact you". Your messages are processed by Google\'s Gemini AI, so leave out names, ID numbers and medical records.',
   },
 ];
 
@@ -83,7 +83,7 @@ const FAQ = [
   },
   {
     q: 'How are the professionals ranked?',
-    a: 'Purely by their Google rating and review volume, pulled live from Google Places. There are no sponsored slots and no paid placements — no professional can pay to appear or to rank higher.',
+    a: 'By their Google rating weighted by review volume, pulled live from Google Places — so a 4.8 from hundreds of reviews beats a 5.0 from three. When Google has no ratings for a search, results stay in Google\'s own order. There are no sponsored slots and no paid placements — no professional can pay to appear or to rank higher.',
   },
   {
     q: 'Does FindMyPro give legal, medical or financial advice?',
@@ -91,7 +91,11 @@ const FAQ = [
   },
   {
     q: 'Do you contact the professionals on my behalf?',
-    a: 'Never. You get names, ratings, addresses and phone numbers, and you decide who to contact. Your details are not passed on to anyone and your search is not sold as a lead.',
+    a: 'Never. You get names, ratings, addresses and phone numbers, and you decide who to contact. Your search is not sold as a lead and no professional is told you searched.',
+  },
+  {
+    q: 'What happens to what I type?',
+    a: 'Your messages are sent to Google\'s Gemini AI so it can work out which professional you need. FindMyPro uses Gemini\'s free tier, where Google may use what you send to improve its products. Please do not type names, ID or account numbers, or medical records — describe the situation in general terms instead. The full privacy notes are on the About page.',
   },
   {
     q: 'Which countries does it cover?',
@@ -133,7 +137,7 @@ function buildJsonLd() {
         operatingSystem: 'Any modern web browser',
         browserRequirements: 'Requires JavaScript',
         description:
-          'Describe your situation in plain English and FindMyPro identifies whether you need a lawyer, doctor or financial advisor, then surfaces the highest-rated verified practitioners near you.',
+          'Describe your situation in plain English and FindMyPro identifies whether you need a lawyer, doctor or financial advisor, then surfaces the highest-rated practitioners near you, with links to verify their credentials.',
         offers: {
           '@type': 'Offer',
           price: '0',
@@ -219,7 +223,7 @@ export default function Landing() {
     path: '/',
     title: 'FindMyPro — Find the Right Lawyer, Doctor or Financial Advisor Near You',
     description:
-      'Describe your situation in plain English. FindMyPro works out whether you need a lawyer, doctor or financial advisor, then shows the highest-rated verified professionals near you — ranked by real Google reviews, with no paid placements.',
+      'Describe your situation in plain English. FindMyPro works out whether you need a lawyer, doctor or financial advisor, then shows the highest-rated professionals near you — ranked by real Google reviews, with links to verify credentials and no paid placements.',
     image: OG_IMAGE,
     jsonLd: buildJsonLd(),
   });
@@ -397,12 +401,13 @@ export default function Landing() {
             <Link to="/about">About</Link>
             <a href="#how-it-works">How it works</a>
             <a href="#faq">FAQ</a>
+            <Link to="/about#privacy">Privacy</Link>
           </nav>
 
           <p className="lp-footer-disclaimer">
             FindMyPro helps you <strong>find</strong> professionals — it does not provide legal,
             medical or financial advice, and it is not a substitute for a licensed professional.
-            Ratings come from Google review data; listings are never sponsored. Always verify
+            Ratings come from Google review data; listings are never sponsored. Messages are processed by Google Gemini — don't include names, ID numbers or medical records. Always verify
             credentials independently before engaging anyone.
           </p>
 

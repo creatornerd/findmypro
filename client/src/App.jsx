@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { CompassIcon, SunIcon, MoonIcon } from './icons.jsx';
 import { useTheme } from './theme.js';
 import { useSeo } from './seo.js';
+import { REFERRAL_KEY } from './referral.js';
 
 // createClient() throws synchronously if the URL is missing, which would take
 // down the entire app at module load (before React even mounts) on any
@@ -20,7 +21,6 @@ const API_URL       = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
 const STORAGE_KEY   = 'findmypro_session';
 const SESSIONS_KEY  = 'findmypro_sessions';
 const USAGE_KEY     = 'findmypro_usage_v2';
-const REFERRAL_KEY  = 'findmypro_referral';
 const GUEST_LIMIT   = 1;   // one free search, then the sign-up wall
 const AUTH_WEEKLY_LIMIT = 15;
 const REFERRAL_BONUS = 10; // keep in step with api/index.js
@@ -415,8 +415,8 @@ function Welcome({ onPick, onFocusInput }) {
       <p className="lede">
         Describe your situation in plain words — no jargon, no forms. FindMyPro
         identifies the type of professional you may need and finds highly rated
-        specialists near you, using real Google ratings and credential verification
-        sources. Mention your city, and your country if you are outside the US.
+        specialists near you, using real Google ratings, with links to verify
+        credentials. Mention your city, and your country if you are outside the US.
       </p>
       <button className="cta-btn" onClick={onFocusInput}>Describe your situation &rarr;</button>
 
@@ -511,7 +511,7 @@ function AuthModal({ initialTab, onClose }) {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { first_name: firstName } },
+          options: { data: { first_name: firstName }, emailRedirectTo: `${window.location.origin}/chat` },
         });
         if (error) throw error;
         setVerifyNotice(true);
@@ -530,14 +530,14 @@ function AuthModal({ initialTab, onClose }) {
   const signInWithGoogle = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: `${window.location.origin}/chat` },
     });
   };
 
   const signInWithMicrosoft = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'azure',
-      options: { redirectTo: window.location.origin, scopes: 'email' },
+      options: { redirectTo: `${window.location.origin}/chat`, scopes: 'email' },
     });
   };
 
@@ -651,7 +651,7 @@ function GateModal({ onClose, onShowAuth, variant = 'blocked' }) {
         <ul className="gate-perks">
           <li><GateCheck /> {AUTH_WEEKLY_LIMIT} searches every week</li>
           <li><GateCheck /> Conversation history saved across devices</li>
-          <li><GateCheck /> +{REFERRAL_BONUS} bonus searches for every friend you refer</li>
+          <li><GateCheck /> +{REFERRAL_BONUS} bonus searches for every friend you refer who searches</li>
           <li><GateCheck /> Free forever &mdash; no card required</li>
         </ul>
 
@@ -686,15 +686,16 @@ function ReferralPanel({ session, onClose }) {
   const [info, setInfo] = useState(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!session) return;
     fetch(`${API_URL}/referral/info`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error('referral info failed'); return r.json(); })
       .then(data => { setInfo(data); setLoading(false); })
-      .catch(() => setLoading(false));
+      .catch(() => { setFailed(true); setLoading(false); });
   }, [session]);
 
   const copyLink = () => {
@@ -718,11 +719,16 @@ function ReferralPanel({ session, onClose }) {
       <div className="gate-modal referral-modal" onClick={e => e.stopPropagation()}>
         <CompassIcon size={34} />
         <h2 className="gate-title">Refer a Friend</h2>
+        {failed && (
+          <p className="gate-text" role="alert">
+            We couldn&rsquo;t load your referral link right now. Please try again in a moment.
+          </p>
+        )}
         <p className="gate-text">
-          Share your link — when someone signs up, you get <strong>+10 bonus searches/week</strong>.
+          Share your link — when a friend signs up and runs their first search, you get <strong>+{REFERRAL_BONUS} bonus searches/week</strong> (up to +{info?.maxBonusSearches ?? 50}).
         </p>
 
-        <div className="referral-link-box">
+        {!failed && <div className="referral-link-box">
           <input
             type="text"
             readOnly
@@ -733,7 +739,7 @@ function ReferralPanel({ session, onClose }) {
           <button className="cta-btn" onClick={copyLink} style={{ marginTop: 8, width: '100%', justifyContent: 'center' }}>
             {copied ? 'Copied!' : 'Copy referral link'}
           </button>
-        </div>
+        </div>}
 
         <div className="referral-stats">
           <div className="referral-stat">
@@ -929,6 +935,8 @@ function App() {
   const [stage, setStage]                 = useState(() =>
     restored ? (restored.results ? 'found' : 'asking') : 'listening');
   const [toast, setToast]                 = useState(null);
+  const [refining, setRefining]           = useState(null); // text of a follow-up sent while results are showing
+  const [refineOutcome, setRefineOutcome] = useState(null); // { text, kind: 'results' | 'reply' } for the last follow-up
   const [sidebarOpen, setSidebarOpen]     = useState(false);
   const [gateOpen, setGateOpen]           = useState(false);
   const [authModal, setAuthModal]         = useState(null); // null | 'signin' | 'signup'
@@ -942,30 +950,20 @@ function App() {
     path: '/chat',
     title: 'Find a Lawyer, Doctor or Financial Advisor | FindMyPro',
     description:
-      'Describe your situation and FindMyPro will identify the type of lawyer, doctor or financial advisor you may need and find highly rated professionals near you, using real Google ratings and credential verification sources.',
+      'Describe your situation and FindMyPro will identify the type of lawyer, doctor or financial advisor you may need and find highly rated professionals near you, using real Google ratings, with links to verify credentials.',
   });
 
   const taRef          = useRef(null);
   const mainRef        = useRef(null);
   const resultsRef     = useRef(null);
+  const lastTurnRef    = useRef(null);
   const prevResultsRef = useRef(null);
   const gateTimerRef   = useRef(null);
   const handoffRef     = useRef(false);
   const sendRef        = useRef(null);
+  const claimingRef    = useRef(false);
 
   useEffect(() => () => clearTimeout(gateTimerRef.current), []);
-
-  // Capture referral code from URL on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const ref = params.get('ref');
-    if (ref) {
-      localStorage.setItem(REFERRAL_KEY, ref);
-      params.delete('ref');
-      const rest = params.toString();
-      window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''));
-    }
-  }, []);
 
   // Supabase auth state
   useEffect(() => {
@@ -976,7 +974,8 @@ function App() {
         setAuthModal(null);
         // Claim referral if one exists in localStorage
         const storedRef = localStorage.getItem(REFERRAL_KEY);
-        if (storedRef) {
+        if (storedRef && !claimingRef.current) {
+          claimingRef.current = true;
           fetch(`${API_URL}/referral/claim`, {
             method: 'POST',
             headers: {
@@ -984,8 +983,12 @@ function App() {
               Authorization: `Bearer ${session.access_token}`,
             },
             body: JSON.stringify({ referralCode: storedRef }),
-          }).finally(() => {
-            localStorage.removeItem(REFERRAL_KEY);
+          }).then(r => {
+            // Keep the code on 5xx so we retry next time; a 4xx (invalid,
+            // self-referral, already referred) will never succeed, so drop it.
+            if (r.status < 500) localStorage.removeItem(REFERRAL_KEY);
+          }).catch(() => {}).finally(() => {
+            claimingRef.current = false;
           });
         }
       }
@@ -1038,14 +1041,17 @@ function App() {
   // Scroll
   useEffect(() => {
     if (!mainRef.current) return;
-    const arrived = results && !prevResultsRef.current;
+    const arrived = results && results !== prevResultsRef.current;
     prevResultsRef.current = results;
     if (arrived && resultsRef.current) {
       resultsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (refining && lastTurnRef.current) {
+      // A follow-up sent from below the results: bring the conversation back into view.
+      lastTurnRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else if (messages.length > 0 && !results) {
       mainRef.current.scrollTop = mainRef.current.scrollHeight;
     }
-  }, [messages, results, loading, searching]);
+  }, [messages, results, loading, searching, refining]);
 
   const showToast = useCallback((text) => {
     setToast(text);
@@ -1086,6 +1092,8 @@ function App() {
     setActiveId(null);
     setMessages([]);
     setResults(null);
+    setRefining(null);
+    setRefineOutcome(null);
     setStage('listening');
     setInput('');
     setSearching(false);
@@ -1119,6 +1127,8 @@ function App() {
     setActiveId(s.id);
     setMessages(s.messages);
     setResults(s.results || null);
+    setRefining(null);
+    setRefineOutcome(null);
     setStage(s.results ? 'found' : 'asking');
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: s.id, title: s.title, messages: s.messages, results: s.results }));
   }, []);
@@ -1126,6 +1136,9 @@ function App() {
   const send = async (textArg) => {
     const text = (textArg ?? input).trim();
     if (!text || loading) return;
+
+    const isRefinement = !!results;
+    if (isRefinement) { setRefining(text); setRefineOutcome(null); }
 
     const next = [...messages, { role: 'user', content: text }];
     setMessages(next);
@@ -1140,6 +1153,13 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: next }),
       });
+      if (chatRes.status === 429) {
+        const body = await chatRes.json().catch(() => ({}));
+        setMessages(m => [...m, { role: 'assistant', content: body.message || "You're sending messages too quickly. Please wait a bit and try again." }]);
+        setLoading(false);
+        setStage('asking');
+        return;
+      }
       if (!chatRes.ok) throw new Error('API request failed');
       const data = await chatRes.json();
       if (!data.message) throw new Error('No response from AI');
@@ -1197,6 +1217,7 @@ function App() {
           setStage('asking');
         } else {
           setResults(searchResults);
+          if (isRefinement) setRefineOutcome({ text, kind: 'results' });
           setSearching(false);
           setStage('found');
 
@@ -1210,6 +1231,7 @@ function App() {
           }
         }
       } else {
+        if (isRefinement) setRefineOutcome({ text, kind: 'reply' });
         setStage('asking');
       }
     } catch (err) {
@@ -1218,6 +1240,8 @@ function App() {
       setLoading(false);
       setSearching(false);
       setStage('asking');
+    } finally {
+      setRefining(null);
     }
   };
 
@@ -1328,7 +1352,7 @@ function App() {
               <div className="thread">
                 <Progress stage={stage} />
                 {messages.map((m, i) => (
-                  <div key={i} className={`turn ${m.role}`}>
+                  <div key={i} ref={i === messages.length - 1 ? lastTurnRef : null} className={`turn ${m.role}`}>
                     <div className="avatar" aria-hidden="true">
                       {m.role === 'user' ? <span className="av-you">You</span> : <MiniCompass />}
                     </div>
@@ -1344,8 +1368,30 @@ function App() {
               </div>
 
               {(searching || results) && (
-                <section className="results" ref={resultsRef}>
+                <section className={`results${refining && results ? ' is-stale' : ''}`} ref={resultsRef}>
                   {searching && !results && <div className="searching-note">Reviewing reputations, ratings, and proximity…</div>}
+                  {refining && results && (
+                    <div className="refine-status" role="status">
+                      <span className="refine-status-dot" aria-hidden="true" />
+                      <span>{searching ? 'Finding new matches for' : 'Sending'} <q>{refining}</q>&hellip;</span>
+                    </div>
+                  )}
+                  {!refining && refineOutcome && results && (
+                    refineOutcome.kind === 'results' ? (
+                      <div className="refine-status is-done" role="status">
+                        <span aria-hidden="true">&#10003;</span>
+                        <span>Results updated for <q>{refineOutcome.text}</q></span>
+                      </div>
+                    ) : (
+                      <button
+                        className="refine-status is-done is-link"
+                        onClick={() => lastTurnRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                      >
+                        <span aria-hidden="true">&uarr;</span>
+                        <span>Answered <q>{refineOutcome.text}</q> in the conversation above — these results are unchanged.</span>
+                      </button>
+                    )
+                  )}
                   {results && results.map((cat, i) => (
                     <div key={i}>
                       <div className="results-head">
@@ -1365,8 +1411,18 @@ function App() {
                   {results && (
                     <div className="refine-section">
                       <div className="refine-label">Refine your search</div>
+                      <p className="refine-hint">Tap a suggestion to send it as your next message — or type your own below. The results above update when a new search runs.</p>
                       <div className="refine-chips">
-                        {refinements.map((r, i) => <button key={i} className="refine-chip" onClick={() => send(r)}>{r}</button>)}
+                        {refinements.map((r, i) => (
+                          <button
+                            key={i}
+                            className={`refine-chip${refining === r ? ' is-active' : ''}`}
+                            onClick={() => send(r)}
+                            disabled={loading || searching}
+                          >
+                            {refining === r ? `Sending: ${r}…` : r}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -1386,7 +1442,7 @@ function App() {
                   )}
                   {results && (
                     <p className="fineprint">
-                      Results ranked by Google rating. Data sourced from Google Places via Serper — no sponsored listings, no paid placements.
+                      Results ranked by Google rating. Data sourced from Google Places — no sponsored listings, no paid placements.
                       FindMyPro helps narrow your options — it is not legal, medical, or financial advice.
                       Always verify credentials directly: lawyers via your <a href="https://www.americanbar.org/groups/legal_services/flh-home/" target="_blank" rel="noopener noreferrer">State Bar</a>, doctors via the <a href="https://www.fsmb.org/physician-data-center/" target="_blank" rel="noopener noreferrer">Medical Board</a>, financial advisors via <a href="https://brokercheck.finra.org" target="_blank" rel="noopener noreferrer">FINRA BrokerCheck</a>.
                     </p>
@@ -1427,11 +1483,15 @@ function App() {
                   : 'Free search used — sign up to continue'}
             </button>
           </div>
+          <p className="composer-privacy">
+            Messages are processed by Google Gemini. Don&rsquo;t include names, ID numbers or medical records.{' '}
+            <Link to="/about#privacy">Privacy</Link>
+          </p>
         </footer>
 
         <div className="site-credit">
           © {new Date().getFullYear()} Ahaan Hossain. All rights reserved. ·{' '}
-          <Link to="/">Home</Link> · <Link to="/about">About</Link>
+          <Link to="/">Home</Link> · <Link to="/about">About</Link> · <Link to="/about#privacy">Privacy</Link>
         </div>
       </div>
 

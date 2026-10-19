@@ -4,7 +4,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Landing from './Landing.jsx'
 import App from './App.jsx'
 import About from './About.jsx'
+import { captureReferralFromUrl } from './referral.js'
 import './styles.css'
+
+captureReferralFromUrl()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

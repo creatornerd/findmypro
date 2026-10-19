@@ -66,7 +66,7 @@ const routes = [
     dir: '.',
     title: 'FindMyPro — Find the Right Lawyer, Doctor or Financial Advisor Near You',
     description:
-      "Describe your situation in plain English. FindMyPro works out whether you need a lawyer, doctor or financial advisor, then shows the highest-rated verified professionals near you — ranked by real Google reviews, with no paid placements.",
+      "Describe your situation in plain English. FindMyPro works out whether you need a lawyer, doctor or financial advisor, then shows the highest-rated professionals near you — ranked by real Google reviews, with links to verify credentials and no paid placements.",
     ogDescription:
       "Tell FindMyPro what's going on in plain words. It works out which specialist you need and surfaces top-rated professionals near you — ranked by real Google reviews.",
     body: `
@@ -80,8 +80,8 @@ const routes = [
         of you, ranked by real Google reviews.</p>
         <h2>How it works</h2>
         <p>Describe your situation in plain words. FindMyPro identifies whether you need a
-        lawyer, doctor or financial advisor, then shows verified, highly rated practitioners
-        near you.</p>
+        lawyer, doctor or financial advisor, then shows highly rated practitioners near you,
+        with links to verify their credentials.</p>
         <h2>Who you'll find</h2>
         <p>Lawyers for personal injury, landlord disputes, family and custody matters,
         employment issues, estate planning and immigration. Doctors across primary care and
@@ -97,7 +97,7 @@ const routes = [
     dir: 'chat',
     title: 'Find a Lawyer, Doctor or Financial Advisor | FindMyPro',
     description:
-      "Describe your situation and FindMyPro will identify the type of lawyer, doctor or financial advisor you may need and find highly rated professionals near you, using real Google ratings and credential verification sources.",
+      "Describe your situation and FindMyPro will identify the type of lawyer, doctor or financial advisor you may need and find highly rated professionals near you, using real Google ratings, with links to verify credentials.",
     body: `
       <header>
         <a href="/">FindMyPro</a>
@@ -106,8 +106,8 @@ const routes = [
         <h1>Find a lawyer, doctor or financial advisor.</h1>
         <p>Describe your situation in plain words — no jargon, no forms. FindMyPro
         identifies the type of professional you may need and finds highly rated
-        specialists near you, using real Google ratings and credential verification
-        sources.</p>
+        specialists near you, using real Google ratings, with links to verify
+        credentials.</p>
       </main>`,
   },
   {
